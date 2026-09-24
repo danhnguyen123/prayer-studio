@@ -1,0 +1,64 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Chạy trên runner GitHub (amd64): kiểm tra code + BUILD DOCKER + smoke test server.
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Build Docker image
+        run: docker build -t prayer-studio:ci .
+
+      - name: Smoke test (khởi động container + gọi /api/status)
+        run: |
+          docker run -d --name ps -e NODE_ENV=production -e APP_PORT=4300 -p 4300:4300 prayer-studio:ci
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4300/api/status >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs ps
+          docker rm -f ps
+          if [ "$ok" != "1" ]; then echo "Server không khởi động được"; exit 1; fi
+          echo "Smoke test OK"
+
+  # Chỉ deploy khi push lên main/master và build-test đã pass.
+  deploy:
+    needs: build-test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy (pull + build + restart trên server ARM)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd /opt/prayer-studio
+            git pull --ff-only
+            docker compose up -d --build
+            docker image prune -f
+            docker builder prune -f
+            docker compose ps

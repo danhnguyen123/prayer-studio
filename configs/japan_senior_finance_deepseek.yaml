@@ -1,0 +1,66 @@
+# =========================================================================
+# Config mẫu — provider DeepSeek (native /chat/completions API)
+# =========================================================================
+# Gọi thẳng https://api.deepseek.com/chat/completions qua request, KHÔNG đi qua
+# Anthropic SDK. Format giống OpenAI Chat Completions.
+#
+# Models:
+#   - "deepseek-v4-pro"    (mặc định, cho mọi tác vụ writing + training)
+#   - "deepseek-v4-flash"  (rẻ hơn / nhanh hơn / yếu hơn — dùng cho batch lớn)
+#   Lưu ý: deepseek-chat & deepseek-reasoner sẽ deprecated 2026/07/24.
+#
+# Context caching: DeepSeek tự động cache prefix giống nhau giữa các request
+# (KV cache server-side). Code chúng ta đã giữ persona DNA ở vị trí ổn định
+# trong prefix → cache hit tự nhiên, không cần marker gì thêm.
+# =========================================================================
+
+name: "Japan 60+ Emotional (DeepSeek)"
+
+provider: "deepseek"            # "anthropic" | "deepseek"
+# api_file: "API_DEEPSEEK.txt"  # auto theo provider, set nếu muốn override
+
+# Persona DNA dùng CHUNG được với config Anthropic — không phụ thuộc provider.
+sample_folder: "samples/japan_senior_finance"
+persona_file:  "personas/analysis_japan_senior_finance_deepseek_v2.md"
+
+training_brief: |
+  Channel YouTube cho người Nhật trên 60 tuổi.
+  FOCUS: Kênh YouTube chuyên về tài chính tuổi già, lối sống tiết kiệm, quản lý lương hưu và những thói quen vàng giúp người lớn tuổi sống an yên,
+  mang đến những gợi ý và hiểu biết để sống trọn vẹn cuộc sống tuổi già.
+  Nội dung thường kể dưới dạng câu chuyện đời thường của người Nhật 60–70 tuổi, kết hợp bài học tài chính, tối giản cuộc sống, tránh sai lầm khi nghỉ hưu và xây dựng hạnh phúc đơn giản trong tuổi già.
+  TARGET AUDIENCE:
+  * Người Nhật từ 60 tuổi trở lên
+  * Người chuẩn bị nghỉ hưu hoặc đang sống bằng lương hưu
+  * Người quan tâm đến tiết kiệm, quản lý tiền bạc và sống tối giản
+  * Khán giả thích nội dung nhẹ nhàng, chữa lành, giàu bài học cuộc sống và kinh nghiệm thực tế
+
+output_folder: "output/japan_senior_finance_deepseek"
+
+length_unit:      "auto"   # CJK → chars, Latin → words
+target_length:    6000     # Japanese chars (~10 phút TTS)
+length_tolerance: 0.2
+length_per_part:  1200     # DeepSeek thường output ngắn hơn Opus → giữ thấp
+quantity:         1
+max_tokens:       8000
+
+topic: "Câu chuyện về thói quen giúp người lớn tuổi sống an yên, dư dả và hạnh phúc"
+output_language: "Japanese"
+
+viral_sample_file: "samples/viral/31_05_2026.txt"
+
+tts_clean: true
+
+# Model — mặc định dùng deepseek-v4-pro cho cả 2 phase.
+# Nếu muốn rẻ hơn cho batch lớn: đổi model_generation sang "deepseek-v4-flash".
+model_training:   "deepseek-v4-pro"
+model_generation: "deepseek-v4-pro"
+
+
+# Tắt log nếu không cần
+log_requests: true
+
+# Đổi thư mục log
+log_dir: "logs/japan_senior_finance_deepseek"
+
+human_voice: true  
+output_format: "auto" 

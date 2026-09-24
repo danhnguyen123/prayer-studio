@@ -1,0 +1,85 @@
+# =========================================================================
+# Writer Pro — Japanese seniors emotional storytelling
+# =========================================================================
+# Persona DNA (.md) là nguồn sự thật về Style / Tone / Focus / Audience.
+# YAML này chỉ giữ paths + length/quantity + topic của batch hiện tại.
+# =========================================================================
+
+name: "Japan 60+ Emotional Storytelling"
+
+# ---------- Phase 1: Training (build Persona DNA) ----------
+sample_folder: "samples/japan_senior_finance"
+persona_file:  "personas/analysis_japan_senior_finance_sonnet_4_6.md"
+
+# Channel brief — feed vào Phase 1 cùng với samples để build Persona DNA.
+# Có thể viết inline ở đây, HOẶC trỏ training_brief_file tới 1 file .md riêng.
+training_brief: |
+  Channel YouTube cho người Nhật trên 60 tuổi.
+  FOCUS: Kênh YouTube chuyên về tài chính tuổi già, lối sống tiết kiệm, quản lý lương hưu và những “thói quen vàng” giúp người lớn tuổi sống an yên, dư dả dù thu nhập thấp. 
+  Nội dung thường kể dưới dạng câu chuyện đời thường của người Nhật 60–70 tuổi, kết hợp bài học tài chính, tối giản cuộc sống, tránh sai lầm khi nghỉ hưu và xây dựng hạnh phúc đơn giản trong tuổi già.
+  TARGET AUDIENCE:
+  * Người Nhật từ 60 tuổi trở lên
+  * Người chuẩn bị nghỉ hưu hoặc đang sống bằng lương hưu
+  * Người quan tâm đến tiết kiệm, quản lý tiền bạc và sống tối giản
+  * Người lớn tuổi lo lắng về tài chính tuổi già, chi phí sinh hoạt và cô đơn sau nghỉ hưu
+  * Khán giả thích nội dung nhẹ nhàng, chữa lành, giàu bài học cuộc sống và kinh nghiệm thực tế
+
+# Optional: dùng file riêng thay vì viết inline (nếu set thì override training_brief)
+# training_brief_file: "personas/brief_japan_senior.md"
+
+# refine_mode: chế độ khi train lại với persona đã tồn tại.
+#   "new_only" (default): chỉ đọc *.txt có mtime > persona md → fold delta vào, rẻ.
+#   "all": đọc TẤT CẢ samples trong folder (an toàn nhất, đắt — dùng khi reset persona).
+#   "folder:samples/japan_senior/new": đọc từ subfolder riêng (chủ động quản lý).
+# refine_mode: "new_only"
+
+# ---------- Phase 2: Generation ----------
+output_folder: "output/japan_senior_finance_sonnet_4_6"
+
+# Length unit: "auto" (default — CJK→chars, Latin→words) | "chars" | "words"
+length_unit:      "auto"
+target_length:    7000   # JAPANESE chars ≈ 10 phút TTS. Auto-detect → unit "chars".
+length_tolerance: 0.15   # ±15% → window 3400-4600 chars.
+length_per_part:  1400   # Japanese natural ~2000 chars/part. Đừng vượt 2500.
+quantity:         1      # số kịch bản tạo trong batch
+max_tokens:       8000
+
+# ---------- Topic của batch này ----------
+topic: "Câu chuyện và thói quen giúp người lớn tuổi Nhật Bản sống an yên, dư dả và hạnh phúc với lương hưu"
+
+# Optional: ngôn ngữ output. Nếu để null, Persona DNA tự quyết định (mục Market & Output Language).
+output_language: "Japanese"
+
+# Optional: trỏ tới 1 kịch bản viral mới (chưa được fold vào Persona DNA).
+# Nếu set, nội dung file sẽ được append vào REQ kèm warning "chỉ học phong cách,
+# tuyệt đối không sao chép nội dung/nhân vật/bối cảnh/tình tiết".
+# Dùng khi: đối thủ vừa có hit, muốn bắt kịp "freshness" mà chưa kịp train lại persona.
+# Lưu ý chi phí: file viral được gửi MỖI request → file lớn = tốn token. Cân nhắc trim
+# xuống đoạn hook + climax tiêu biểu (~1500-3000 chars).
+viral_sample_file: "samples/viral/japan_senior_finance_viral_1.txt"
+
+# Optional: override / augment tạm thời cho batch này, không sửa persona.
+# extra_instructions: |
+#   Lần này hãy chèn 1 ký ức tuổi 20 của nhân vật chính.
+#   Kết bài bằng 1 câu hỏi mở để khán giả comment.
+
+# ---------- Sạch cho TTS ----------
+tts_clean: true
+
+# ---------- Model ----------
+model_training:   "claude-sonnet-4-6"
+model_generation: "claude-sonnet-4-6"
+
+# Optional: override REQ template. Placeholder hỗ trợ: [Điền Chủ Đề Của Bạn Vào Đây]
+# req_template: |
+#   ...
+
+
+# Tắt log nếu không cần
+log_requests: true
+
+# Đổi thư mục log
+log_dir: "logs/japan_senior_finance"
+
+human_voice: true   
+output_format: "auto" 

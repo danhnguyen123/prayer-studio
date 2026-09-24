@@ -1,0 +1,24 @@
+services:
+  prayer-studio:
+    build: .
+    image: prayer-studio:latest
+    container_name: prayer-studio
+    restart: unless-stopped
+    env_file: .env
+    # Mở ra public IP:port. BẮT BUỘC đặt APP_BASIC_AUTH_USER/PASS trong .env,
+    # và mở ingress cổng này ở Oracle Security List + ufw (xem DEPLOY.md).
+    ports:
+      - "4300:4300"
+    volumes:
+      # Thư viện media (footage/ảnh/nhạc) — chỉ đọc. Xem .env để trỏ đúng đường dẫn.
+      - /mnt/media:/media:ro
+      # Dữ liệu runtime bền + dễ dọn (nằm trên host, không phình lớp ghi của container)
+      - ./data/renders:/app/renders
+      - ./data/output:/app/output
+      - ./data/logs:/app/logs
+      - ./data/workspace:/app/workspace
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

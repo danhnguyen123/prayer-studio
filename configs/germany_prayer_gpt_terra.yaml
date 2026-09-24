@@ -1,0 +1,103 @@
+# =========================================================================
+# Config rewrite một lần — GPT-5.6 Terra qua OpenAI Responses API
+# =========================================================================
+# Dùng cùng Persona DNA của config DeepSeek nhưng viết toàn bộ kịch bản trong
+# một request: length_per_part bằng target_length.
+#
+# Models:
+#   - "deepseek-v4-pro"    (mặc định, cho mọi tác vụ writing + training)
+#   - "deepseek-v4-flash"  (rẻ hơn / nhanh hơn / yếu hơn — dùng cho batch lớn)
+#   Lưu ý: deepseek-chat & deepseek-reasoner sẽ deprecated 2026/07/24.
+#
+# Context caching: DeepSeek tự động cache prefix giống nhau giữa các request
+# (KV cache server-side). Code chúng ta đã giữ persona DNA ở vị trí ổn định
+# trong prefix → cache hit tự nhiên, không cần marker gì thêm.
+# =========================================================================
+
+name: "Germany Prayer (GPT-5.6 Terra via OpenAI)"
+
+provider: "openai"
+processing_mode: "standard"    # UI có thể override thành "batch"
+api_file: "API_OPENAI.txt"
+reasoning_effort: "medium"
+
+# Persona DNA dùng CHUNG được với config Anthropic — không phụ thuộc provider.
+sample_folder: "samples/germany_prayer"
+persona_file:  "personas/analysis_germany_prayer_deepseek_korea_v1.md"
+
+training_brief: |
+  Channel YouTube dành cho người Công giáo Đức.
+  FOCUS:
+  Kênh YouTube chuyên về cầu nguyện Công giáo hằng ngày, giúp người xem tìm thấy bình an, hy vọng và sức mạnh tinh thần qua các bài cầu nguyện buổi sáng và những giờ cầu nguyện chữa lành. 
+  Nội dung tập trung vào việc xây dựng đời sống đức tin, phó thác cho Chúa Giêsu.
+  Các nội dung thường được trình bày dưới dạng lời cầu nguyện dẫn dắt, cầu nguyện theo chủ đề (bình an, chữa lành, gia đình, bảo vệ, hy vọng), giúp người xem dễ dàng lắng nghe và cầu nguyện bất cứ lúc nào trong ngày.
+  
+  TARGET AUDIENCE:
+  Người Công giáo Đức
+  Người thường xuyên cầu nguyện buổi sáng
+  Người đang trải qua khó khăn, lo âu, bệnh tật hoặc cần sự nâng đỡ tinh thần
+  Người tìm kiếm bình an nội tâm, sự chữa lành và niềm hy vọng nơi Chúa
+
+  CORE THEMES:
+  Cầu nguyện buổi sáng với Chúa Giêsu
+  Cầu nguyện chữa lành
+  Cầu nguyện xin bình an và bảo vệ
+
+  TONE & STYLE:
+  Ấm áp, dịu dàng và đầy hy vọng
+  Trang nghiêm nhưng gần gũi
+  Khích lệ đức tin và sự phó thác
+  Ngôn ngữ đơn giản, dễ hiểu và dễ cầu nguyện theo
+  Tạo cảm giác bình an, an ủi và được đồng hành trong đời sống tâm linh hằng ngày.
+
+output_folder: "output/germany_prayer"
+
+length_unit:      "auto"   # CJK → chars, Latin → words
+target_length:    5000     # Latin words
+length_tolerance: 0.2
+length_per_part:  5000     # Một request duy nhất, không chia part
+quantity:         1
+max_tokens:       24000    # Includes visible output + reasoning tokens
+
+output_language: "Germany"
+
+topic: "Cầu nguyện buổi sáng với Chúa Giêsu"
+
+viral_sample_file: "samples/translate/germany_korea/2026-06-11.txt"
+
+
+tts_clean: true
+
+# GPT-5.6 Terra qua OpenAI chính thức, reasoning medium.
+model_training:   "gpt-5.6-terra"
+model_generation: "gpt-5.6-terra"
+
+
+# Tắt log nếu không cần
+log_requests: true
+
+# Đổi thư mục log
+log_dir: "logs/germany_prayer_gpt_terra"
+
+human_voice: false  
+output_format: "auto" 
+
+req_template: |
+  NHIỆM VỤ: Sáng tạo 1 kịch bản HOÀN TOÀN MỚI về chủ đề: [Điền Chủ Đề Của Bạn Vào Đây].
+
+  Kịch bản mẫu viral: chỉ là VÍ DỤ THAM KHẢO về nhịp điệu và cách triển khai. KHÔNG phải khuôn để sao chép câu chữ.
+
+  ĐƯỢC PHÉP TÁI SỬ DỤNG (khuyến khích):
+  - Các câu Kinh Thánh (lấy từ Scripture Bank trong Persona DNA, đúng bản dịch Công giáo của ngôn ngữ target).
+  - Công thức cầu nguyện cốt lõi: khuôn ba nhịp (Kinh Thánh → tạ ơn → cầu xin), các cụm cầu xin quen thuộc, motif an ủi.
+  - Cấu trúc tổng thể và trình tự chủ đề (cá nhân → gia đình → công việc → phó thác cuối).
+
+  BẮT BUỘC PHẢI MỚI (không được giống bài mẫu):
+  - Toàn bộ CÂU CHỮ cụ thể phải được diễn đạt lại bằng lời mới — không sao chép nguyên câu, nguyên đoạn từ bài mẫu.
+  - Cách dẫn vào mỗi câu Kinh Thánh, các hình ảnh minh họa, các lời tạ ơn và cầu xin phải được viết mới.
+  - Thứ tự các câu Kinh Thánh và cách phối hợp chủ đề nên khác bài mẫu để tránh trùng lặp cảm giác.
+
+  YÊU CẦU CHẤT LƯỢNG:
+  - Bám sát Do / Don't, giọng văn, nhịp kể, hook pattern, closing pattern trong Persona DNA.
+
+refine_mode: all

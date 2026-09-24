@@ -1,0 +1,62 @@
+ip.addr == 3.173.21.63
+
+
+496520
+496575
+496882
+514835
+525503
+
+
+Viết một bài viết về chủ đề "Personal DNA" dựa trên nội dung của file md ở trên. Bài viết cần có cấu trúc rõ ràng, bao gồm phần giới thiệu, phần thân và phần kết luận. Nội dung cần được trình bày một cách logic và dễ hiểu, đồng thời phải đảm bảo tính chính xác và đầy đủ thông tin về chủ đề "Personal DNA".
+
+
+
+STYLE: Japanese realistic emotional storytelling
+
+TONE:
+Gentle, reflective, emotional, comforting, slow-paced, deeply relatable for Japanese seniors.
+
+FOCUS:
+Daily life, pension life, loneliness, small habits, emotional healing, human warmth, rediscovering happiness.
+
+WRITING STYLE:
+Simple Japanese language, natural dialogue, strong empathy, vivid everyday details, emotional internal thoughts without being overly dramatic.
+
+TARGET AUDIENCE:
+Japanese people over 60 years old.
+
+                              max_input_tokens max_token
+
+claude-opus-4-7               1000000          128000
+
+claude-sonnet-4-6             1000000          128000
+
+claude-opus-4-6               1000000          128000
+
+claude-opus-4-5-20251101      200000           64000
+
+claude-haiku-4-5-20251001     200000           64000
+
+claude-sonnet-4-5-20250929    1000000          64000
+
+claude-opus-4-1-20250805      200000           32000
+
+claude-opus-4-20250514        200000           32000
+
+claude-sonnet-4-20250514      1000000          64000
+
+Xếp hạng model về chất lượng:
+sonnet 4.6
+opus 4.6
+deepseek-v4-pro
+
+Giá:
+sonnet 4.6
+opus 4.6
+deepseek-v4-pro
+
+Sử dụng:
+sonnet 4.6
+deepseek-v4-pro
+

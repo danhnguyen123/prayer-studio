@@ -1,0 +1,40 @@
+# Giữ build context nhỏ + KHÔNG bao giờ đưa secret/media vào image
+node_modules
+dist
+.git
+.github
+.npm-cache
+**/__pycache__
+*.pyc
+*.log
+
+# Secrets — không bao giờ nằm trong image
+.env
+.env.*
+!.env.example
+API.txt
+API_*.txt
+
+# Dữ liệu runtime / đầu ra (sinh trong container qua volume)
+renders/
+output/
+logs/
+log/
+samples/
+workspace/
+backup/
+
+# Media nặng — mount qua volume, không nhét vào image
+*.mp4
+*.mov
+*.webm
+*.mp3
+*.MP3
+*.wav
+sound.mp3
+intro.MP3
+
+# Lặt vặt
+.remotion/
+*.png
+Python.code-workspace

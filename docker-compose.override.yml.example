@@ -1,0 +1,25 @@
+# Copy thành docker-compose.override.yml để TEST LOCAL bằng Docker trước khi deploy.
+# docker compose tự động nạp file override này (không commit file thật vì chứa path máy bạn).
+#
+#   Copy-Item docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose up --build
+#   mở http://localhost:4300
+#
+# Ở local (Windows + Docker Desktop) media vẫn nằm ổ D:, nên override lại volume + port.
+services:
+  prayer-studio:
+    ports:
+      - "4300:4300" # local: mở thẳng, không cần SSH tunnel
+    volumes:
+      - "D:/Materials/Video 4K:/media/video:ro"
+      - "D:/Materials/Pray/Image:/media/image:ro"
+      - "D:/Materials/Music:/media/music:ro" # đặt intro.MP3 ở đây
+      - "./data/renders:/app/renders"
+      - "./data/output:/app/output"
+      - "./data/logs:/app/logs"
+      - "./data/workspace:/app/workspace"
+    # Ghi đè media root khớp với volume ở trên (khớp .env server)
+    environment:
+      DEFAULT_VIDEO_DIR: /media/video
+      DEFAULT_IMAGE_DIR: /media/image
+      DEFAULT_MUSIC_PATH: /media/music/intro.MP3

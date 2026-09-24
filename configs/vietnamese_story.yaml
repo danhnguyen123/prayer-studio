@@ -1,0 +1,34 @@
+# Config mẫu thứ 2 — Vietnamese sảng văn dài
+name: "Vietnamese Sảng Văn"
+
+sample_folder: "samples/vn_sangvan"
+persona_file:  "personas/analysis_vn_sangvan.md"
+
+training_brief: |
+  Channel sảng văn Việt Nam, target nữ 25-45 thích drama gia tộc / công sở.
+  STYLE: Sảng văn vả mặt, plot twist liên hoàn.
+  TONE: Đanh đá, hài hước, châm biếm sâu cay, nhịp dồn dập.
+  FOCUS: Vạch trần kẻ giả tạo, lật ngược thế cờ, nữ chính giấu thân phận.
+  WRITING STYLE: Văn xuôi ngắn gọn, đối thoại sắc bén, internal monologue đanh thép.
+  TARGET AUDIENCE: Người Việt 25-45, thiên về nữ.
+  Tránh: nội dung 18+, bạo lực máu me, miệt thị vùng miền.
+
+output_folder: "output/vn_sangvan"
+
+# Vietnamese → unit "words" (Latin script, auto-detect).
+# Quy đổi tham khảo: 2500 words tiếng Việt ≈ 12-15 phút TTS.
+length_unit:      "auto"
+target_length:    2500
+length_tolerance: 0.15
+length_per_part:  1200
+quantity:         5
+max_tokens:       8000
+
+topic: "Cô vợ bị nhà chồng coi thường lật mặt khi tiết lộ thân phận thật"
+
+output_language: "Vietnamese"
+
+tts_clean: true
+
+model_training:   "claude-opus-4-7"
+model_generation: "claude-opus-4-7"
