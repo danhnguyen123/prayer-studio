@@ -21,4 +21,5 @@ backup/
 samples/translate/
 .env.*
 !.env.example
+!.env.production
 docker-compose.override.yml

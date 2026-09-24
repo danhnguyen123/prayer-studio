@@ -4,7 +4,11 @@ services:
     image: prayer-studio:latest
     container_name: prayer-studio
     restart: unless-stopped
-    env_file: .env
+    # Gộp env: .env (secret của bạn, scp riêng, không commit) + .env.production
+    # (override cho production, có trong repo). File sau ghi đè file trước.
+    env_file:
+      - .env
+      - .env.production
     # Mở ra public IP:port. BẮT BUỘC đặt APP_BASIC_AUTH_USER/PASS trong .env,
     # và mở ingress cổng này ở Oracle Security List + ufw (xem DEPLOY.md).
     ports:

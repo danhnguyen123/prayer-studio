@@ -71,18 +71,24 @@ scp .env deploy@<server>:/opt/prayer-studio/.env
 ssh deploy@<server> 'chmod 600 /opt/prayer-studio/.env'
 ```
 
-Sửa các dòng sau trong `.env` trên server (khác bản local):
+**Cách gộp env:** deploy dùng **2 file** — `.env` (secret của bạn, scp riêng, KHÔNG commit)
+và `.env.production` (override cho production, **đã có sẵn trong repo**, không chứa secret).
+`docker-compose.yml` khai báo `env_file: [.env, .env.production]` → Compose gộp cả hai vào
+môi trường container, **`.env.production` ghi đè** `.env` ở các key trùng. Đây là "1 env chung"
+mà server dùng.
+
+Vì vậy `.env` trên server **chỉ cần secrets** (API keys, AWS creds) + Basic Auth; các giá trị
+production (`NODE_ENV`, `PYTHON_EXECUTABLE`, `DEFAULT_VIDEO_DIR/IMAGE_DIR/MUSIC_PATH`…) đã nằm
+trong `.env.production`, khỏi sửa tay. Chỉ cần thêm vào `.env`:
 
 ```dotenv
-NODE_ENV=production
-PYTHON_EXECUTABLE=python3
-DEFAULT_VIDEO_DIR=/media/video
-DEFAULT_IMAGE_DIR=/media/image
-DEFAULT_MUSIC_PATH=/media/music/intro.MP3
 # BẮT BUỘC khi mở public IP:port — đặt user/mật khẩu mạnh:
 APP_BASIC_AUTH_USER=admin
 APP_BASIC_AUTH_PASS=<mật-khẩu-mạnh-ngẫu-nhiên>
 ```
+
+> Muốn đổi đường dẫn media/port cho production thì sửa `.env.production` rồi commit — không
+> cần đụng `.env` trên server.
 
 **Bảo mật (quan trọng khi mở public IP:port):**
 - `.env`, `API_*.txt` đã nằm trong `.gitignore` **và** `.dockerignore` → không vào Git, không vào image.
