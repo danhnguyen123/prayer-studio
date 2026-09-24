@@ -232,6 +232,20 @@ echo '{ "dns": ["8.8.8.8"] }' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
 
+### `docker compose up` lỗi: `Failed to Setup IP tables ... DOCKER-FORWARD ... No chain/target/match`
+iptables của Docker bị hỏng (thường sau khi chạy `iptables -F`/`ufw` sau khi Docker đã start).
+Cách sửa (một lần, network sau đó được tạo và dùng lại):
+```bash
+sudo systemctl restart docker      # Docker dựng lại các chain iptables
+cd /opt/prayer-studio && docker compose up -d
+# nếu vẫn lỗi:
+sudo reboot                        # khởi tạo lại iptables + Docker sạch sẽ
+```
+
+**Phương án thay thế — chạy network host** (bỏ qua bridge, tránh hẳn lỗi iptables). Sửa
+`docker-compose.yml`: thay khối `ports:` bằng `network_mode: "host"` (app tự nghe cổng
+`APP_PORT` trên host). Hợp với VM 1 app; nhớ mở cổng đó ở Oracle Security List + ufw.
+
 ### Vào web không được qua public IP
 - Kiểm tra app nghe `0.0.0.0` (đã set `APP_HOST=0.0.0.0` trong `.env.production`).
 - Mở cổng ở **cả** Oracle Security List **và** `ufw`/iptables trên VM (mục 4).
