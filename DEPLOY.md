@@ -214,15 +214,22 @@ docker buildx use default        # dùng builder mặc định (network của ho
 docker compose up -d --build
 ```
 
-Nếu vẫn muốn dùng builder container, sửa DNS cho nó, hoặc đặt DNS cho Docker daemon:
-```bash
-echo '{ "dns": ["8.8.8.8", "1.1.1.1"] }' | sudo tee /etc/docker/daemon.json
-sudo systemctl restart docker
-```
-
 Kiểm tra server có kéo được image gốc không:
 ```bash
 docker pull node:20-bookworm-slim   # phải thành công trước khi build
+```
+
+### Build lỗi: `Temporary failure resolving 'deb.debian.org'` (apt/npm/pip khi RUN)
+DNS của Docker cho các bước `RUN` không hoạt động (dù pull image OK). CI đã xử lý bằng
+`docker build --network=host` (các bước RUN dùng DNS của host). Nếu chạy tay:
+```bash
+docker build --network=host -t prayer-studio:latest .
+docker compose up -d
+```
+Hoặc sửa hẳn DNS cho Docker daemon (dùng `8.8.8.8`; nhiều mạng Oracle chặn `1.1.1.1`):
+```bash
+echo '{ "dns": ["8.8.8.8"] }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
 ```
 
 ### Vào web không được qua public IP

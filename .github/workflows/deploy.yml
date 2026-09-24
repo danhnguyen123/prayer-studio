@@ -58,9 +58,10 @@ jobs:
             set -euo pipefail
             cd /opt/prayer-studio
             git pull --ff-only
-            # Dùng builder mặc định (network của host → DNS Docker Hub OK), tránh
-            # builder docker-container bị lỗi "no route to host" khi resolve registry.
+            # Dùng builder mặc định + build với --network=host để các bước RUN (apt/npm/pip)
+            # dùng DNS của host (tránh lỗi "Temporary failure resolving deb.debian.org").
             docker buildx use default 2>/dev/null || true
-            docker compose up -d --build
+            docker build --network=host -t prayer-studio:latest .
+            docker compose up -d
             docker image prune -f
             docker compose ps
