@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ---- Build stage: dựng frontend (Vite -> dist) ----
 FROM node:20-bookworm-slim AS build
 WORKDIR /app

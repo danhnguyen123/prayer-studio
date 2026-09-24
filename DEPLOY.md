@@ -200,3 +200,32 @@ find /opt/prayer-studio/data/logs    -type f -mtime +14 -delete
 ```
 
 > Tránh `docker system prune --volumes` khi container đang chạy — có thể xoá nhầm dữ liệu.
+
+---
+
+## Xử lý sự cố
+
+### Build lỗi: `lookup registry-1.docker.io on 1.1.1.1:53: no route to host`
+Do buildx builder kiểu **docker-container** (vd `arm64builder`) không phân giải được DNS.
+Cách xử lý (đã tự áp dụng trong CI bằng `docker buildx use default`):
+
+```bash
+docker buildx use default        # dùng builder mặc định (network của host)
+docker compose up -d --build
+```
+
+Nếu vẫn muốn dùng builder container, sửa DNS cho nó, hoặc đặt DNS cho Docker daemon:
+```bash
+echo '{ "dns": ["8.8.8.8", "1.1.1.1"] }' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+Kiểm tra server có kéo được image gốc không:
+```bash
+docker pull node:20-bookworm-slim   # phải thành công trước khi build
+```
+
+### Vào web không được qua public IP
+- Kiểm tra app nghe `0.0.0.0` (đã set `APP_HOST=0.0.0.0` trong `.env.production`).
+- Mở cổng ở **cả** Oracle Security List **và** `ufw`/iptables trên VM (mục 4).
+- `docker compose ps` xem container còn chạy; `docker compose logs` xem lỗi.
