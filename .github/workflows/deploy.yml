@@ -30,7 +30,7 @@ jobs:
 
       - name: Smoke test (khởi động container + gọi /api/status)
         run: |
-          docker run -d --name ps -e NODE_ENV=production -e APP_PORT=4300 -p 4300:4300 prayer-studio:ci
+          docker run -d --name ps -e NODE_ENV=production -e APP_HOST=0.0.0.0 -e APP_PORT=4300 -p 4300:4300 prayer-studio:ci
           ok=0
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:4300/api/status >/dev/null 2>&1; then ok=1; break; fi

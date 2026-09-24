@@ -26,7 +26,14 @@ const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScri
 
 const app = express();
 const port = Number(process.env.APP_PORT || 4300);
-const baseUrl = `http://127.0.0.1:${port}`;
+// Trong container phải nghe 0.0.0.0 để cổng publish (-p) và public IP truy cập được;
+// local mặc định 127.0.0.1 cho an toàn. Đặt APP_HOST để ghi đè.
+const host =
+  process.env.APP_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
+// baseUrl RỖNG = URL tương đối (cùng origin) cho media/preview/download → hoạt động dù
+// truy cập qua localhost, public IP hay domain. Local render (headless Chrome) cần tuyệt đối.
+const clientBaseUrl = '';
+const localBaseUrl = `http://127.0.0.1:${port}`;
 const allowedMediaRoots = new Set([PROJECT_ROOT]);
 const uploadRoot = path.join(PROJECT_ROOT, 'workspace', 'uploads');
 mkdirSync(uploadRoot, {recursive: true});
@@ -373,7 +380,7 @@ app.post('/api/workflows/:jobId/:language/preview', async (request, response, ne
       options.imageDir,
       options.musicPath && path.dirname(options.musicPath),
     ]);
-    const plan = await media.buildMediaPlan({...options, baseUrl});
+    const plan = await media.buildMediaPlan({...options, baseUrl: clientBaseUrl});
     response.json(plan);
   } catch (error) {
     next(error);
@@ -411,7 +418,7 @@ app.post('/api/lambda/render', (request, response, next) => {
       workflowId: workflow.id,
       languages: selectedLanguages,
       options,
-      baseUrl,
+      baseUrl: clientBaseUrl,
     });
     response.status(202).json({jobId: job.id});
   } catch (error) {
@@ -440,7 +447,7 @@ app.post('/api/video/plan', async (request, response, next) => {
       path.dirname(options.srtPath),
       options.musicPath && path.dirname(options.musicPath),
     ]);
-    const plan = await media.buildMediaPlan({...options, baseUrl});
+    const plan = await media.buildMediaPlan({...options, baseUrl: clientBaseUrl});
     response.json(plan);
   } catch (error) {
     next(error);
@@ -453,7 +460,7 @@ app.post('/api/render', (request, response, next) => {
     const job = jobs.createJob('video-render', {
       preview: Boolean(options.previewSeconds),
     });
-    renderer.runRenderJob(job.id, options, baseUrl, registerMediaRoots);
+    renderer.runRenderJob(job.id, options, localBaseUrl, registerMediaRoots);
     response.status(202).json({jobId: job.id});
   } catch (error) {
     next(error);
@@ -522,6 +529,6 @@ app.use((error, _request, response, _next) => {
   response.status(400).json({error: error.message || 'Đã xảy ra lỗi.'});
 });
 
-app.listen(port, '127.0.0.1', () => {
-  console.log(`Prayer Studio: ${baseUrl}`);
+app.listen(port, host, () => {
+  console.log(`Prayer Studio: http://${host}:${port}`);
 });
