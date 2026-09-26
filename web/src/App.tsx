@@ -54,7 +54,7 @@ export const App = () => {
   const [koreanScript, setKoreanScript] = useState('');
   const [selectedLanguages, setSelectedLanguages] = useState(['france', 'poland', 'germany', 'italia', 'korea']);
   const [rewriteModes, setRewriteModes] = useState<Record<string, string>>({
-    france: 'translation', poland: 'translation', germany: 'translation', italia: 'translation', korea: 'translation',
+    france: 'gpt-korea', poland: 'gpt-korea', germany: 'gpt-korea', italia: 'gpt-korea', korea: 'gpt-korea',
   });
   const [translationProvider, setTranslationProvider] = useState<'openai' | 'kie'>('openai');
   const [processingMode, setProcessingMode] = useState<'standard' | 'batch'>('standard');
@@ -230,10 +230,10 @@ export const App = () => {
                     value={rewriteModes[language.code]}
                     onChange={(event) => setRewriteModes((current) => ({...current, [language.code]: event.target.value}))}
                   >
-                    <option value="translation">Dùng bản dịch · Mặc định</option>
+                    <option value="translation">Dùng nguyên bản dịch</option>
                     <option value="deepseek">Rewrite · DeepSeek v4 Pro</option>
-                    <option value="gpt">Rewrite · GPT‑5.6 Terra medium</option>
-                    <option value="gpt-korea">Rewrite thẳng từ tiếng Hàn · GPT‑5.6 Terra medium</option>
+                    <option value="gpt">Rewrite từ bản dịch · GPT‑5.6 Terra medium</option>
+                    <option value="gpt-korea">Rewrite thẳng từ tiếng Hàn · GPT‑5.6 Terra medium · Mặc định</option>
                   </select>
                 </div>
               ))}

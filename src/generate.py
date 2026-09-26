@@ -70,6 +70,15 @@ def _unit_label(unit: str) -> str:
     return "characters" if unit == "chars" else "words"
 
 
+def _is_prayer_task(cfg: dict) -> bool:
+    """Identify prayer configs without changing the generic story workflow."""
+    clues = " ".join(
+        str(cfg.get(key, ""))
+        for key in ("topic", "persona_file", "output_folder", "output_filename_prefix")
+    ).lower()
+    return "prayer" in clues or "cầu nguyện" in clues
+
+
 # --- REQ + helpers ---------------------------------------------------------
 
 def _build_req(cfg: dict) -> str:
@@ -110,16 +119,14 @@ def _plan_parts(total: int, per_part: int) -> list[int]:
     return parts
 
 
-def _build_system_blocks(persona_md: str, req: str, cfg: dict) -> list[dict]:
-    """Static blocks shared across all parts of one script. Cache-tagged."""
+def _build_system_prompt(persona_md: str, cfg: dict) -> str:
+    """High-authority instructions shared across every part of one script."""
     lines = [
         "YOU ARE THIS WRITER. Follow the Persona DNA below as your absolute source of truth on style, tone, audience, focus, hook, pacing, emotional arc, closing, POV, and Do/Don't rules.",
         "",
         "=== PERSONA DNA ===",
         persona_md,
         "=== END PERSONA DNA ===",
-        "",
-        f"REQ: {req}",
     ]
     extra = (cfg.get("extra_instructions") or "").strip()
     if extra:
@@ -127,6 +134,15 @@ def _build_system_blocks(persona_md: str, req: str, cfg: dict) -> list[dict]:
     output_lang = cfg.get("output_language")
     if output_lang:
         lines += ["", f"OUTPUT LANGUAGE: {output_lang}."]
+
+    if _is_prayer_task(cfg):
+        lines += [
+            "",
+            "PRAYER ACCURACY AND FINAL SILENT QA (MANDATORY):",
+            "- Before returning the narration, silently proofread the complete script. Fix grammar, idiom, spelling, punctuation, divine-pronoun capitalization, and sentences that are too long or awkward for TTS. Use correct Catholic terminology whenever the Persona DNA is Catholic; otherwise preserve the denomination required by the Persona DNA. Do not mention this QA pass in the output.",
+            "- Never invent direct speech attributed to God, Jesus, or the Holy Spirit. Present divine speech as a direct quotation only when it is an accurate Scripture quotation supported by the Persona DNA or its approved Scripture bank. If exact wording is uncertain, paraphrase it as narration without quotation marks and without claiming that God said it directly.",
+            "- Do not introduce angels, nations or countries, consecrated people, charismatic practices, or charismatic language unless the Persona DNA or the explicit request requires them. Do not broaden the prayer into these topics on your own.",
+        ]
 
     # Anti-AI-detection rules — make it read like a human wrote.
     if cfg.get("human_voice", True):
@@ -141,7 +157,15 @@ def _build_system_blocks(persona_md: str, req: str, cfg: dict) -> list[dict]:
     if fmt_block:
         lines += ["", fmt_block]
 
-    return [text_block("\n".join(lines), cache=True)]
+    return "\n".join(lines)
+
+
+def _build_user_blocks(req: str, instruction: str) -> list[dict]:
+    """Per-request task and reference material, kept below system authority."""
+    return [
+        text_block(f"=== REQUEST AND REFERENCE MATERIAL ===\n{req}\n=== END REQUEST AND REFERENCE MATERIAL ==="),
+        text_block(instruction),
+    ]
 
 
 def _build_part_instruction(
@@ -162,6 +186,7 @@ def _build_part_instruction(
     """Per-part user message. Length contract phrased in the chosen unit."""
     output_lang = cfg.get("output_language") or "the output language"
     u = _unit_label(unit)   # "characters" or "words"
+    is_prayer = _is_prayer_task(cfg)
 
     lines = ["=== LENGTH CONTRACT ==="]
 
@@ -199,7 +224,35 @@ def _build_part_instruction(
         "",
     ]
 
-    if total_parts == 1:
+    if is_prayer and total_parts == 1:
+        lines.append(
+            "Write the COMPLETE prayer script now: opening surrender, Scripture-based "
+            "deepening, emotional peak of trust or healing, intercession, final surrender, "
+            "and blessing — execute every relevant section of the Persona DNA."
+        )
+    elif is_prayer:
+        if part_index == 1:
+            lines.append(
+                "ROLE: OPENING PRAYER. Begin with the opening pattern in the Persona DNA, "
+                "welcome the listener into God's presence, name the first human burden, and "
+                "start the Scripture→thanksgiving→petition rhythm. Do not conclude or preview "
+                "a dramatic ending; finish with a gentle transition into the next prayer theme."
+            )
+        elif part_index == total_parts:
+            lines.append(
+                "ROLE: FINAL PRAYER MOVEMENT. Continue seamlessly, reach the emotional peak "
+                "through trust, healing, or surrender, then complete the intercession, final "
+                "surrender, blessing, and Closing Pattern from the Persona DNA. End the prayer "
+                "fully and naturally."
+            )
+        else:
+            lines.append(
+                "ROLE: PRAYER DEEPENING. Continue seamlessly with distinct "
+                "Scripture→thanksgiving→petition movements. Expand into a new concrete life "
+                "theme, deepen trust without artificial drama, and avoid repeating earlier "
+                "petitions. Do not conclude; finish with a gentle transition to the next theme."
+            )
+    elif total_parts == 1:
         lines.append("Write the COMPLETE script now: hook, development, climax/twist, closing — execute every section of the Persona DNA.")
     else:
         if part_index == 1:
@@ -251,7 +304,7 @@ def generate(cfg: dict, client: BaseClient) -> list[Path]:
     base_plan = _plan_parts(total_target, length_per_part)
     total_parts = len(base_plan)
 
-    system_blocks = _build_system_blocks(persona_md, req, cfg)
+    system_prompt = _build_system_prompt(persona_md, cfg)
 
     written: list[Path] = []
     for n in range(1, quantity + 1):
@@ -301,7 +354,7 @@ def generate(cfg: dict, client: BaseClient) -> list[Path]:
             )
 
             if i == 0:
-                user_blocks = system_blocks + [text_block(instruction)]
+                user_blocks = _build_user_blocks(req, instruction)
             else:
                 user_blocks = [text_block(instruction)]
             messages.append({"role": "user", "content": user_blocks})
@@ -317,6 +370,7 @@ def generate(cfg: dict, client: BaseClient) -> list[Path]:
                 messages=messages,
                 model=cfg["model_generation"],
                 max_tokens=cfg.get("max_tokens", 8000),
+                system=system_prompt,
             ).strip()
 
             actual = _measure(text, unit)

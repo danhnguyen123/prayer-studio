@@ -52,10 +52,10 @@ training_brief: |
 
 output_folder: "output/korea_prayer"
 
-length_unit:      "auto"   # CJK → chars, Latin → words
-target_length:    20000     # Korean chars
+length_unit:      "words"  # Đếm theo từ tiếng Hàn (whitespace-separated)
+target_length:    2800      # Korean words
 length_tolerance: 0.2
-length_per_part:  20000    # Một request duy nhất, không chia part
+length_per_part:  2800     # Một request duy nhất, không chia part
 quantity:         1
 max_tokens:       48000    # Includes visible output + reasoning tokens
 

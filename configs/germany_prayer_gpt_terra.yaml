@@ -59,7 +59,7 @@ length_per_part:  5000     # Một request duy nhất, không chia part
 quantity:         1
 max_tokens:       24000    # Includes visible output + reasoning tokens
 
-output_language: "Germany"
+output_language: "German"
 
 topic: "Cầu nguyện buổi sáng với Chúa Giêsu"
 
