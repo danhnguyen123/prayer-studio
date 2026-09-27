@@ -12,6 +12,9 @@ import {
 import {Captions, VerseCard} from './Captions';
 import type {MediaClip, PrayerVideoProps} from './schema';
 
+const MEDIA_DELAY_RENDER_TIMEOUT_MS = 120_000;
+const MEDIA_DELAY_RENDER_RETRIES = 2;
+
 const ImageScene: React.FC<{clip: MediaClip}> = ({clip}) => {
   const frame = useCurrentFrame();
   const durationInFrames = clip.durationInFrames;
@@ -20,6 +23,8 @@ const ImageScene: React.FC<{clip: MediaClip}> = ({clip}) => {
       <Img
         name="Prayer still"
         src={clip.src}
+        delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
+        delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}
         style={{
           width: '100%',
           height: '100%',
@@ -43,6 +48,8 @@ const VideoScene: React.FC<{clip: MediaClip}> = ({clip}) => {
       <Video
         name="Prayer footage"
         src={clip.src}
+        delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
+        delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}
         muted
         objectFit="cover"
         trimBefore={clip.trimBefore}
@@ -105,13 +112,23 @@ export const PrayerVideo: React.FC<PrayerVideoProps> = ({
 
       {musicSrc && introFrames > 0 ? (
         <Sequence from={0} durationInFrames={introFrames} name="Background music">
-          <Audio src={musicSrc} loop volume={musicVolumeAt} />
+          <Audio
+            src={musicSrc}
+            loop
+            volume={musicVolumeAt}
+            delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
+            delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}
+          />
         </Sequence>
       ) : null}
 
       {audioSrc ? (
         <Sequence from={introFrames} name="Voiceover">
-          <MediaAudio src={audioSrc} />
+          <MediaAudio
+            src={audioSrc}
+            delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
+            delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}
+          />
         </Sequence>
       ) : null}
 

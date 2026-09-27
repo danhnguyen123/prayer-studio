@@ -321,7 +321,7 @@ const renderLanguageOnLambda = async ({
       message: 'Đang khởi chạy Remotion Lambda',
     });
     const outName = `renders/${workflowId}/${code}-${Date.now()}.mp4`;
-    const concurrency = Number(process.env.REMOTION_CONCURRENCY || 200);
+    const concurrency = Number(process.env.REMOTION_CONCURRENCY || 150);
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 200) {
       throw new Error('REMOTION_CONCURRENCY phải là số nguyên từ 1 đến 200.');
     }
@@ -341,6 +341,8 @@ const renderLanguageOnLambda = async ({
       crf: 20,
       x264Preset: 'veryfast',
       maxRetries: 2,
+      timeoutInMilliseconds: 120_000,
+      logLevel: process.env.REMOTION_LOG_LEVEL === 'verbose' ? 'verbose' : 'info',
       concurrency,
       metadata: {workflowId, language: code},
     });
