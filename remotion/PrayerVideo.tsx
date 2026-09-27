@@ -1,10 +1,10 @@
-import {Audio as MediaAudio, Video} from '@remotion/media';
 import {
   AbsoluteFill,
   Audio,
   Easing,
   Img,
   interpolate,
+  OffthreadVideo,
   Sequence,
   useCurrentFrame,
   useVideoConfig,
@@ -45,15 +45,15 @@ const ImageScene: React.FC<{clip: MediaClip}> = ({clip}) => {
 const VideoScene: React.FC<{clip: MediaClip}> = ({clip}) => {
   return (
     <AbsoluteFill style={{backgroundColor: '#080c0d'}}>
-      <Video
-        name="Prayer footage"
+      <OffthreadVideo
+        name={`Prayer footage ${clip.id}`}
         src={clip.src}
         delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
         delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}
         muted
-        objectFit="cover"
         trimBefore={clip.trimBefore}
-        style={{width: '100%', height: '100%'}}
+        toneMapped={false}
+        style={{width: '100%', height: '100%', objectFit: 'cover'}}
       />
     </AbsoluteFill>
   );
@@ -124,7 +124,8 @@ export const PrayerVideo: React.FC<PrayerVideoProps> = ({
 
       {audioSrc ? (
         <Sequence from={introFrames} name="Voiceover">
-          <MediaAudio
+          <Audio
+            name="Voiceover"
             src={audioSrc}
             delayRenderTimeoutInMilliseconds={MEDIA_DELAY_RENDER_TIMEOUT_MS}
             delayRenderRetries={MEDIA_DELAY_RENDER_RETRIES}

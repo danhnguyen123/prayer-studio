@@ -321,10 +321,17 @@ const renderLanguageOnLambda = async ({
       message: 'Đang khởi chạy Remotion Lambda',
     });
     const outName = `renders/${workflowId}/${code}-${Date.now()}.mp4`;
-    const concurrency = Number(process.env.REMOTION_CONCURRENCY || 150);
-    if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 200) {
+    const requestedConcurrency = Number(process.env.REMOTION_CONCURRENCY || 150);
+    if (
+      !Number.isInteger(requestedConcurrency) ||
+      requestedConcurrency < 1 ||
+      requestedConcurrency > 200
+    ) {
       throw new Error('REMOTION_CONCURRENCY phải là số nguyên từ 1 đến 200.');
     }
+    // Cap at 150 even if an older server .env still contains 200. High fan-out
+    // makes long MP3 and 4K footage compete for S3 bandwidth and media decoders.
+    const concurrency = Math.min(requestedConcurrency, 150);
     const started = await renderMediaOnLambda({
       region: config.region,
       functionName: config.functionName,

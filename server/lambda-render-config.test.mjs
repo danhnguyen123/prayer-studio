@@ -15,10 +15,13 @@ test('Lambda render uses resilient media timeouts and conservative concurrency',
   );
 
   assert.match(lambdaSource, /REMOTION_CONCURRENCY \|\| 150/);
+  assert.match(lambdaSource, /Math\.min\(requestedConcurrency, 150\)/);
   assert.match(lambdaSource, /timeoutInMilliseconds: 120_000/);
   assert.match(lambdaSource, /REMOTION_LOG_LEVEL === 'verbose'/);
   assert.match(compositionSource, /MEDIA_DELAY_RENDER_TIMEOUT_MS = 120_000/);
   assert.match(compositionSource, /MEDIA_DELAY_RENDER_RETRIES = 2/);
+  assert.match(compositionSource, /<OffthreadVideo/);
+  assert.doesNotMatch(compositionSource, /from '@remotion\/media'/);
   assert.equal(
     (compositionSource.match(/delayRenderTimeoutInMilliseconds=/g) || []).length,
     4,
