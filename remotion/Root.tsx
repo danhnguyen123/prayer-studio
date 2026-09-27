@@ -7,6 +7,7 @@ const calculateMetadata: CalculateMetadataFunction<PrayerVideoProps> = async ({
   props,
 }) => ({
   durationInFrames: props.durationInFrames,
+  fps: props.fps,
   defaultOutName: props.previewSeconds ? 'prayer-preview.mp4' : 'prayer-video.mp4',
 });
 

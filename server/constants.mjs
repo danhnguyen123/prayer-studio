@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 export const PROJECT_ROOT = path.resolve(import.meta.dirname, '..');
-export const FPS = 30;
+export const FPS = Number(process.env.VIDEO_FPS || 30);
 export const WIDTH = 1920;
 export const HEIGHT = 1080;
 
