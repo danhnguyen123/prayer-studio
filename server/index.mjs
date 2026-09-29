@@ -60,6 +60,16 @@ const registerMediaRoots = (roots) => {
   }
 };
 
+// Cấp quyền sẵn các thư mục media mặc định lúc khởi động → media-file phục vụ được
+// ngay cả trước khi có preview/render (không phụ thuộc trạng thái in-memory).
+registerMediaRoots([
+  DEFAULT_PATHS.videoDir,
+  DEFAULT_PATHS.imageDir,
+  DEFAULT_PATHS.musicPath && path.dirname(DEFAULT_PATHS.musicPath),
+  DEFAULT_PATHS.audioPath && path.dirname(DEFAULT_PATHS.audioPath),
+  DEFAULT_PATHS.srtPath && path.dirname(DEFAULT_PATHS.srtPath),
+]);
+
 const isWithin = (root, candidate) => {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
