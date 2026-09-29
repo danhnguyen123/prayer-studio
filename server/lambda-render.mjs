@@ -275,11 +275,22 @@ const renderLanguageOnLambda = async ({
       baseUrl,
     });
 
+    // Chẩn đoán: xác nhận plan gửi lên Lambda có trimBefore hợp lệ hay không.
+    {
+      const vclips = plan.clips.filter((c) => c.type === 'video');
+      const maxTrim = vclips.reduce((m, c) => Math.max(m, c.trimBefore || 0), 0);
+      const maxEnd = vclips.reduce((m, c) => Math.max(m, (c.trimBefore || 0) + c.durationInFrames), 0);
+      const line = `[plan ${code}] fps=${plan.fps} total=${plan.durationInFrames} clips=${plan.clips.length} maxTrimBefore=${maxTrim} maxClipEnd=${maxEnd}`;
+      console.log(line);
+      appendJobLog(jobId, line);
+    }
+
     const config = lambdaConfig();
     const {bucketName} = await getBucket(config.region);
     const serveUrl = await getServeUrl(config, bucketName, (message) =>
       setLambdaLanguage(jobId, code, {message}),
     );
+    console.log(`[serveUrl ${code}] ${serveUrl}`);
 
     setLambdaLanguage(jobId, code, {
       stage: 'uploading-media',
