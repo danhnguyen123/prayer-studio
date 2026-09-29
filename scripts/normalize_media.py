@@ -45,6 +45,9 @@ def build_cmd(src: Path, dst: Path, args) -> list[str]:
     if args.height and args.height > 0:
         # Hạ về tối đa <height> px chiều cao, giữ tỉ lệ, chỉ downscale (không upscale).
         cmd += ["-vf", f"scale=-2:min({args.height}\\,ih)"]
+    if args.maxrate and args.maxrate > 0:
+        # Trần bitrate (VBV) → khống chế dung lượng file dù footage nhiều chuyển động.
+        cmd += ["-maxrate", f"{args.maxrate}M", "-bufsize", f"{args.maxrate * 2}M"]
     cmd += [str(dst)]
     return cmd
 
@@ -60,6 +63,8 @@ def main() -> None:
     p.add_argument("--height", type=int, default=1080,
                    help="Chiều cao tối đa (px); 0 = giữ nguyên độ phân giải")
     p.add_argument("--crf", type=int, default=20)
+    p.add_argument("--maxrate", type=int, default=0,
+                   help="Trần bitrate Mbps (VBV) để khống chế dung lượng; 0 = tắt")
     p.add_argument("--preset", default="medium")
     p.add_argument("--ffmpeg", default="ffmpeg")
     p.add_argument("--force", action="store_true", help="Ghi đè file đã chuẩn hoá")
