@@ -139,6 +139,12 @@ if (basicAuthUser && basicAuthPass) {
     `Basic ${Buffer.from(`${basicAuthUser}:${basicAuthPass}`).toString('base64')}`,
   );
   app.use((request, response, next) => {
+    // Player nạp media qua thẻ <video>/<audio> với crossOrigin → không gửi Basic Auth.
+    // Miễn auth cho media-file; endpoint đó chỉ phục vụ đuôi media trong thư mục đã cấp quyền.
+    if (request.path === '/api/media-file') {
+      next();
+      return;
+    }
     const provided = Buffer.from(String(request.headers.authorization || ''));
     if (
       provided.length === expected.length &&
@@ -476,9 +482,21 @@ app.get('/api/jobs/:jobId', (request, response) => {
   response.json(job);
 });
 
+const MEDIA_FILE_EXTENSIONS = new Set([
+  '.mp4', '.mov', '.webm', '.m4v', // video
+  '.mp3', '.wav', '.m4a', '.aac', // audio
+  '.jpg', '.jpeg', '.png', '.webp', '.gif', // image
+  '.srt', '.vtt', // subtitle
+]);
+
 app.get('/api/media-file', async (request, response, next) => {
   try {
     const requestedPath = path.resolve(String(request.query.path || ''));
+    // Chỉ phục vụ ĐUÔI media (endpoint này miễn auth nên không được lộ mã nguồn/khác).
+    if (!MEDIA_FILE_EXTENSIONS.has(path.extname(requestedPath).toLowerCase())) {
+      response.status(403).json({error: 'Loại file không được phép.'});
+      return;
+    }
     const allowed = [...allowedMediaRoots].some((root) => isWithin(root, requestedPath));
     if (!allowed) {
       response.status(403).json({error: 'Đường dẫn media chưa được cấp quyền.'});
