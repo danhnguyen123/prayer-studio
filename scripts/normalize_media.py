@@ -40,6 +40,11 @@ def build_cmd(src: Path, dst: Path, args) -> list[str]:
         "-preset", args.preset,
         "-crf", str(args.crf),
         "-pix_fmt", "yuv420p",
+        # KHÔNG B-frame + GOP ngắn: thứ tự giải mã = hiển thị, seek chắc chắn →
+        # tránh lỗi Remotion "No frame found at position" khi trích frame.
+        "-bf", "0",
+        "-g", str(args.fps * 2),
+        "-video_track_timescale", str(args.fps * 1000),
         "-movflags", "+faststart",
     ]
     if args.height and args.height > 0:
