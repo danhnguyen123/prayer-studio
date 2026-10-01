@@ -1,0 +1,93 @@
+# AWS Batch FFmpeg — một EC2 Spot worker
+
+Branch này giữ Remotion Player để preview, nhưng render production bằng FFmpeg trên
+AWS Batch. Compute environment có `maxvCpus: 8`, mỗi job yêu cầu 8 vCPU, do đó chỉ
+có tối đa **một** EC2 Spot worker chạy tại một thời điểm. Nếu chọn nhiều ngôn ngữ,
+backend submit lần lượt: video sau chỉ bắt đầu khi video trước hoàn tất.
+
+## 1. Điều kiện
+
+- AWS CLI và Docker đã cài trên Oracle VM.
+- AWS credentials trên VM có quyền CloudFormation, IAM, Batch, EC2, ECR, S3 và Logs.
+- Chọn VPC và ít nhất một subnet có đường ra Internet. Nếu là public subnet, bật
+  auto-assign public IPv4; nếu là private subnet, cần NAT Gateway hoặc VPC endpoints
+  cho ECR, S3 và CloudWatch Logs.
+
+## 2. Tạo hạ tầng và push worker
+
+```bash
+cd /opt/prayer-studio
+git fetch origin
+git switch codex/aws-batch-ffmpeg
+git pull --ff-only
+
+export AWS_REGION=ap-southeast-1
+export VPC_ID=vpc-xxxxxxxx
+export SUBNET_IDS=subnet-xxxxxxxx,subnet-yyyyyyyy
+chmod +x scripts/deploy-batch-worker.sh
+./scripts/deploy-batch-worker.sh
+```
+
+Script tạo:
+
+- S3 bucket private, lifecycle xóa plan/status tạm trong `batch-jobs/` sau 2 ngày;
+- video cuối trong `batch-renders/` được giữ lại cho đến khi bạn chủ động xóa;
+- ECR repository giữ tối đa 5 worker image;
+- AWS Batch Spot compute environment ARM;
+- giới hạn 8 vCPU = tối đa một `c7g.2xlarge` hoặc `c6g.2xlarge`;
+- job queue, job definition, IAM least-privilege và CloudWatch log group;
+- build/push `Dockerfile.batch` lên ECR.
+
+Cuối script sẽ in bốn biến `AWS_BATCH_*`. Chép chúng vào `.env` trên Oracle rồi:
+
+```bash
+docker compose up -d --force-recreate
+curl -u "$APP_BASIC_AUTH_USER:$APP_BASIC_AUTH_PASS" http://127.0.0.1:4300/api/status
+```
+
+`batchConfigured` phải là `true`.
+
+## 3. Quyền của backend Oracle
+
+AWS key mà web backend dùng cần các action:
+
+```text
+batch:SubmitJob
+batch:DescribeJobs
+batch:TagResource
+s3:GetObject
+s3:PutObject
+s3:AbortMultipartUpload
+```
+
+Giới hạn S3 resource vào bucket stack vừa tạo; giới hạn Batch resource vào queue và
+job definition. Worker không nhận key từ Oracle: nó dùng `WorkerJobRole` của ECS.
+
+## 4. Render
+
+1. Upload MP3 + SRT và kiểm tra Preview Remotion.
+2. Bấm `Render FFmpeg · 1 worker`.
+3. Backend tạo media plan, cache footage/ảnh/audio trên S3 và submit Batch job.
+4. EC2 Spot tải đúng media cần dùng, encode H.264/AAC, burn ASS subtitles, xóa
+   metadata và upload MP4 cuối lên S3.
+5. UI trả signed URL 7 ngày.
+
+Giá trị mặc định:
+
+```dotenv
+AWS_BATCH_TIMEOUT_SECONDS=7200
+AWS_BATCH_RETRY_ATTEMPTS=2
+FFMPEG_CRF=20
+FFMPEG_PRESET=veryfast
+```
+
+## 5. Chẩn đoán
+
+```bash
+aws batch list-jobs --region ap-southeast-1 --job-queue "$AWS_BATCH_JOB_QUEUE" --job-status RUNNING
+aws logs tail /aws/batch/prayer-studio-ffmpeg --region ap-southeast-1 --follow
+```
+
+Nếu job đứng ở `RUNNABLE`, thường là thiếu Spot capacity, subnet không ra Internet,
+EC2 Spot quota bằng 0 hoặc instance role chưa đúng. Template cho phép cả c7g và c6g
+để tăng khả năng có capacity.

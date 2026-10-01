@@ -16,6 +16,8 @@ type Status = {
   batchSupported: boolean;
   lambdaConfigured: boolean;
   lambdaRegion: string;
+  batchConfigured: boolean;
+  batchRegion: string;
   languages: Language[];
   defaults: {
     videoDir: string;
@@ -33,7 +35,8 @@ const stageLabels: Record<string, string> = {
   queued: 'Đang chờ', translating: 'GPT Terra đang dịch', generating: 'Đang rewrite',
   'script-ready': 'Kịch bản sẵn sàng', planning: 'Đang tạo timeline',
   'uploading-media': 'Đang tải media lên S3', 'starting-lambda': 'Đang khởi chạy Lambda',
-  rendering: 'Lambda đang render', completed: 'Video sẵn sàng', failed: 'Có lỗi',
+  'starting-batch': 'Đang khởi chạy Batch', 'batch-queued': 'Đang chờ EC2 Spot',
+  rendering: 'FFmpeg đang render', completed: 'Video sẵn sàng', failed: 'Có lỗi',
 };
 
 // Seed ngẫu nhiên để thứ tự video/ảnh khác nhau mỗi lần (dùng chung cho preview + render).
@@ -62,7 +65,7 @@ export const App = () => {
   const [translationProvider, setTranslationProvider] = useState<'openai' | 'kie'>('openai');
   const [processingMode, setProcessingMode] = useState<'standard' | 'batch'>('standard');
   const [workflow, setWorkflow] = useState<Job | null>(null);
-  const [lambdaJob, setLambdaJob] = useState<Job | null>(null);
+  const [renderJob, setRenderJob] = useState<Job | null>(null);
   const [files, setFiles] = useState<Record<string, LocalFiles>>({});
   const [previews, setPreviews] = useState<Record<string, PrayerVideoProps>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -99,7 +102,7 @@ export const App = () => {
   );
 
   const startWorkflow = async () => {
-    setError(''); setLambdaJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
+    setError(''); setRenderJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
     try {
       const {jobId} = await api<{jobId: string}>('/api/workflows', {
         method: 'POST', body: JSON.stringify({
@@ -116,7 +119,7 @@ export const App = () => {
   };
 
   const skipScriptStep = async () => {
-    setError(''); setLambdaJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
+    setError(''); setRenderJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
     try {
       const {jobId} = await api<{jobId: string}>('/api/workflows/skip-script', {
         method: 'POST', body: JSON.stringify({languages: selectedLanguages}),
@@ -153,14 +156,14 @@ export const App = () => {
 
   const renderLanguages = async (languages: string[]) => {
     if (!workflow || languages.length === 0) return;
-    setError(''); setActionBusy('lambda', true);
+    setError(''); setActionBusy('render', true);
     try {
-      const {jobId} = await api<{jobId: string}>('/api/lambda/render', {
+      const {jobId} = await api<{jobId: string}>('/api/batch/render', {
         method: 'POST', body: JSON.stringify({workflowId: workflow.id, languages, ...mediaOptions, introTexts}),
       });
-      await waitForJob(jobId, setLambdaJob);
+      await waitForJob(jobId, setRenderJob);
     } catch (nextError) { setError((nextError as Error).message); }
-    finally { setActionBusy('lambda', false); }
+    finally { setActionBusy('render', false); }
   };
 
   const renderableLanguages = workflowLanguages.filter((code) => workflow?.languages?.[code]?.assets);
@@ -175,8 +178,8 @@ export const App = () => {
         </div>
         <div className="status-stack">
           <div className={`status-pill ${status?.providers?.openai.configured ? 'ready' : 'warning'}`}><span /> OpenAI {status?.providers?.openai.configured ? 'sẵn sàng' : 'chưa có API key'}</div>
-          <div className={`status-pill ${status?.lambdaConfigured ? 'ready' : 'warning'}`}><span /> Lambda {status?.lambdaConfigured ? 'sẵn sàng' : 'chưa cấu hình'}</div>
-          <div className="model-name">{status?.translationModel || 'Đang kiểm tra...'} · medium · {status?.lambdaRegion || 'AWS'}</div>
+          <div className={`status-pill ${status?.batchConfigured ? 'ready' : 'warning'}`}><span /> AWS Batch {status?.batchConfigured ? 'sẵn sàng' : 'chưa cấu hình'}</div>
+          <div className="model-name">{status?.translationModel || 'Đang kiểm tra...'} · medium · {status?.batchRegion || 'AWS'}</div>
         </div>
       </header>
 
@@ -257,14 +260,14 @@ export const App = () => {
             <section className="panel workflow-panel">
               <div className="workflow-heading">
                 <div><StepLabel number="02">Tiến độ theo ngôn ngữ</StepLabel><p className="section-copy">Khi kịch bản sẵn sàng, tải file TXT và dùng nó để tạo MP3/SRT bên ngoài.</p></div>
-                <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setLambdaJob(null); setPreviews({}); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
+                <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setRenderJob(null); setPreviews({}); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
               </div>
               <div className="progress-track"><span style={{width: `${workflow.progress * 100}%`}} /></div>
               <div className="language-workflows">
                 {workflowLanguages.map((code) => {
                   const definition = status?.languages.find((item) => item.code === code);
                   const lane = workflow.languages?.[code] as LanguageJobState | undefined;
-                  const renderLane = lambdaJob?.languages?.[code];
+                  const renderLane = renderJob?.languages?.[code];
                   const preview = previews[code];
                   const pair = files[code] || {};
                   const scriptReady = lane?.stage === 'script-ready';
@@ -287,7 +290,7 @@ export const App = () => {
                           <div className="card-actions">
                             <button className="secondary" disabled={busy[`upload-${code}`] || !pair.audio || !pair.srt} onClick={() => uploadAssets(code)}>{busy[`upload-${code}`] ? 'Đang upload…' : assetsReady ? 'Upload lại MP3 + SRT' : 'Upload MP3 + SRT'}</button>
                             <button className="ghost" disabled={!assetsReady || busy[`preview-${code}`]} onClick={() => createPreview(code)}>{busy[`preview-${code}`] ? 'Đang tạo…' : 'Preview Remotion'}</button>
-                            <button className="primary" disabled={!assetsReady || !status?.lambdaConfigured || busy.lambda} onClick={() => renderLanguages([code])}>Build & Render</button>
+                            <button className="primary" disabled={!assetsReady || !status?.batchConfigured || busy.render} onClick={() => renderLanguages([code])}>Render FFmpeg · 1 worker</button>
                           </div>
                           {preview && <div className="inline-preview"><Player component={PrayerVideo} inputProps={preview} durationInFrames={preview.durationInFrames} compositionWidth={1920} compositionHeight={1080} fps={30} controls style={{width: '100%', aspectRatio: '16 / 9'}} /><div className="preview-meta"><span>{Math.round(preview.audioDurationSeconds / 60)} phút</span><span>{preview.selectedVideos.length} video</span><span>{preview.captions.length} caption</span></div></div>}
                         </div>
@@ -300,7 +303,7 @@ export const App = () => {
             </section>
 
             <section className="panel render-settings">
-              <div><StepLabel number="03">Nguồn hình & Lambda Render</StepLabel><p className="section-copy">Các ngôn ngữ được gửi đồng thời lên Remotion Lambda. Media được dùng lại trên S3 để giảm thời gian upload.</p></div>
+              <div><StepLabel number="03">Nguồn hình & AWS Batch FFmpeg</StepLabel><p className="section-copy">Một EC2 Spot worker render tuần tự từng ngôn ngữ. Media được cache trên S3; Remotion chỉ dùng để preview.</p></div>
               <div className="settings-grid">
                 <label><span>Thư mục footage</span><input value={mediaOptions.videoDir} onChange={(event) => setMediaOptions({...mediaOptions, videoDir: event.target.value})} /></label>
                 <label><span>Thư mục ảnh tĩnh</span><input value={mediaOptions.imageDir} onChange={(event) => setMediaOptions({...mediaOptions, imageDir: event.target.value})} /></label>
@@ -312,7 +315,7 @@ export const App = () => {
                 <label><span>File nhạc nền</span><input value={mediaOptions.musicPath} onChange={(event) => setMediaOptions({...mediaOptions, musicPath: event.target.value})} placeholder="Để trống = tắt nhạc nền" /></label>
                 <label><span>Âm lượng nhạc intro (tắt khi voiceover)</span><input type="number" min="0" max="1" step="0.05" value={mediaOptions.musicIntroVolume} onChange={(event) => setMediaOptions({...mediaOptions, musicIntroVolume: Number(event.target.value)})} /></label>
               </div>
-              <div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ đã có MP3/SRT</strong><span>{status?.lambdaConfigured ? 'Sẵn sàng render song song' : 'Thêm cấu hình AWS/Remotion Lambda trong .env để render'}</span></div><button className="primary" disabled={!status?.lambdaConfigured || renderableLanguages.length === 0 || busy.lambda} onClick={() => renderLanguages(renderableLanguages)}>{busy.lambda ? 'Lambda đang render…' : `Render song song ${renderableLanguages.length || ''} video`}</button></div>
+              <div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ đã có MP3/SRT</strong><span>{status?.batchConfigured ? 'Sẵn sàng xếp hàng tuần tự trên một EC2 Spot worker' : 'Thêm cấu hình AWS Batch trong .env để render'}</span></div><button className="primary" disabled={!status?.batchConfigured || renderableLanguages.length === 0 || busy.render} onClick={() => renderLanguages(renderableLanguages)}>{busy.render ? 'AWS Batch đang render…' : `Render tuần tự ${renderableLanguages.length || ''} video`}</button></div>
             </section>
           </>
         )}

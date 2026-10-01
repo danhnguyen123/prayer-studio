@@ -74,4 +74,5 @@ export type LanguageJobState = {
   downloadUrl?: string;
   outputSizeInBytes?: number;
   renderId?: string;
+  batchJobId?: string;
 };

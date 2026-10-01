@@ -2,7 +2,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, codex/aws-batch-ffmpeg]
   pull_request:
   workflow_dispatch:
 
@@ -28,6 +28,9 @@ jobs:
       - name: Build Docker image
         run: docker build -t prayer-studio:ci .
 
+      - name: Build AWS Batch FFmpeg worker image
+        run: docker build -f Dockerfile.batch -t prayer-studio-ffmpeg:ci .
+
       - name: Smoke test (khởi động container + gọi /api/status)
         run: |
           docker run -d --name ps -e NODE_ENV=production -e APP_HOST=0.0.0.0 -e APP_PORT=4300 -p 4300:4300 prayer-studio:ci
@@ -44,7 +47,7 @@ jobs:
   # Chỉ deploy khi push lên main/master và build-test đã pass.
   deploy:
     needs: build-test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
       - name: SSH deploy (pull + build + restart trên server ARM)

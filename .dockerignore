@@ -5,6 +5,7 @@
 
 !.dockerignore
 !Dockerfile
+!Dockerfile.batch
 !package.json
 !package-lock.json
 !requirements.txt
@@ -24,3 +25,5 @@
 !configs/**
 !personas/
 !personas/**
+!worker/
+!worker/**

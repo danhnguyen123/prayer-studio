@@ -12,7 +12,7 @@ try {
   if (error.code !== 'ENOENT') console.warn(`Không đọc được .env: ${error.message}`);
 }
 
-const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, media, renderer, lambdaRenderer, {prepVoiceover}] =
+const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, media, renderer, lambdaRenderer, batchRenderer, {prepVoiceover}] =
   await Promise.all([
     import('./constants.mjs'),
     import('./translation-provider.mjs'),
@@ -21,6 +21,7 @@ const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScri
     import('./media-plan.mjs'),
     import('./render.mjs'),
     import('./lambda-render.mjs'),
+    import('./aws-batch-render.mjs'),
     import('./voiceover-prep.mjs'),
   ]);
 
@@ -194,6 +195,9 @@ app.get('/api/status', (_request, response) => {
           process.env.AWS_PROFILE),
     ),
     lambdaRegion: process.env.REMOTION_AWS_REGION || 'ap-southeast-1',
+    batchConfigured: batchRenderer.isBatchConfigured(),
+    batchRegion:
+      process.env.AWS_BATCH_REGION || process.env.REMOTION_AWS_REGION || 'ap-southeast-1',
     languages: Object.entries(LANGUAGE_DEFINITIONS).map(([code, value]) => ({
       code,
       label: value.label,
@@ -430,6 +434,48 @@ app.post('/api/lambda/render', (request, response, next) => {
     });
     const options = {...DEFAULT_PATHS, ...request.body};
     lambdaRenderer.runParallelLambdaRenderJob({
+      jobId: job.id,
+      workflowId: workflow.id,
+      languages: selectedLanguages,
+      options,
+      baseUrl: clientBaseUrl,
+    });
+    response.status(202).json({jobId: job.id});
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/batch/render', (request, response, next) => {
+  try {
+    if (!batchRenderer.isBatchConfigured()) {
+      throw new Error('AWS Batch chưa cấu hình. Kiểm tra AWS_BATCH_BUCKET/JOB_QUEUE/JOB_DEFINITION.');
+    }
+    const workflow = jobs.getJob(String(request.body?.workflowId || ''));
+    if (!workflow || workflow.type !== 'prayer-workflow') {
+      throw new Error('Workflow không tồn tại.');
+    }
+    const selectedLanguages = validateLanguages(request.body?.languages).filter(
+      (code) => workflow.languages[code],
+    );
+    for (const code of selectedLanguages) {
+      if (!workflow.languages[code]?.assets) {
+        throw new Error(`${LANGUAGE_DEFINITIONS[code].label}: chưa upload MP3/SRT.`);
+      }
+    }
+    const languageStates = Object.fromEntries(
+      selectedLanguages.map((code) => [
+        code,
+        {code, stage: 'queued', progress: 0, message: 'Đang chờ AWS Batch một worker'},
+      ]),
+    );
+    const job = jobs.createJob('aws-batch-ffmpeg-render', {
+      workflowId: workflow.id,
+      languages: languageStates,
+      selectedLanguages,
+    });
+    const options = {...DEFAULT_PATHS, ...request.body};
+    batchRenderer.runSequentialBatchRenderJob({
       jobId: job.id,
       workflowId: workflow.id,
       languages: selectedLanguages,
