@@ -164,6 +164,9 @@ footer { display: flex; justify-content: space-between; padding: 0 0 30px; color
 .parallel-render-bar strong, .parallel-render-bar span { display: block; }
 .parallel-render-bar strong { color: #d7ddd9; font-size: 12px; }
 .parallel-render-bar span { margin-top: 4px; color: #64736c; font-size: 10px; }
+.seed-field { display: flex; gap: 6px; min-width: 0; }
+.seed-field input { flex: 1 1 auto; min-width: 0; }
+.seed-dice { flex: 0 0 auto; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: #22312c; color: #d9e1dc; padding: 0 10px; font-size: 14px; }
 .production-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; align-items: start; }
 .production-inputs .upload-grid { margin-top: 0; }
 .verse-inline { display: grid; gap: 6px; min-width: 0; }

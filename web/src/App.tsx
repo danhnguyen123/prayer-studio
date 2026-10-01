@@ -36,6 +36,9 @@ const stageLabels: Record<string, string> = {
   rendering: 'Lambda đang render', completed: 'Video sẵn sàng', failed: 'Có lỗi',
 };
 
+// Seed ngẫu nhiên để thứ tự video/ảnh khác nhau mỗi lần (dùng chung cho preview + render).
+const randomSeed = () => Math.random().toString(36).slice(2, 10);
+
 const formatBytes = (bytes = 0) => {
   if (!bytes) return '';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -65,7 +68,7 @@ export const App = () => {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
   const [mediaOptions, setMediaOptions] = useState({
-    videoDir: '', imageDir: '', videoCount: 12, seed: 'prayer-studio',
+    videoDir: '', imageDir: '', videoCount: 12, seed: randomSeed(),
     introSeconds: 8, musicPath: '', musicVolume: 0, musicIntroVolume: 0.2,
     videosPerCycle: 10, imagesPerCycle: 5,
   });
@@ -254,7 +257,7 @@ export const App = () => {
             <section className="panel workflow-panel">
               <div className="workflow-heading">
                 <div><StepLabel number="02">Tiến độ theo ngôn ngữ</StepLabel><p className="section-copy">Khi kịch bản sẵn sàng, tải file TXT và dùng nó để tạo MP3/SRT bên ngoài.</p></div>
-                <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setLambdaJob(null); setPreviews({}); setFiles({});}}>Tạo workflow mới</button></div>
+                <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setLambdaJob(null); setPreviews({}); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
               </div>
               <div className="progress-track"><span style={{width: `${workflow.progress * 100}%`}} /></div>
               <div className="language-workflows">
@@ -302,7 +305,7 @@ export const App = () => {
                 <label><span>Thư mục footage</span><input value={mediaOptions.videoDir} onChange={(event) => setMediaOptions({...mediaOptions, videoDir: event.target.value})} /></label>
                 <label><span>Thư mục ảnh tĩnh</span><input value={mediaOptions.imageDir} onChange={(event) => setMediaOptions({...mediaOptions, imageDir: event.target.value})} /></label>
                 <label><span>Số video nguồn</span><input type="number" min="10" max="15" value={mediaOptions.videoCount} onChange={(event) => setMediaOptions({...mediaOptions, videoCount: Number(event.target.value)})} /></label>
-                <label><span>Random seed</span><input value={mediaOptions.seed} onChange={(event) => setMediaOptions({...mediaOptions, seed: event.target.value})} /></label>
+                <label><span>Random seed (tự tạo · bấm 🎲 để đổi)</span><div className="seed-field"><input value={mediaOptions.seed} onChange={(event) => setMediaOptions({...mediaOptions, seed: event.target.value})} /><button type="button" className="seed-dice" title="Đổi thứ tự ngẫu nhiên" onClick={() => setMediaOptions((current) => ({...current, seed: randomSeed()}))}>🎲</button></div></label>
                 <label><span>Video mỗi chu kỳ</span><input type="number" min="0" max="10" value={mediaOptions.videosPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, videosPerCycle: Number(event.target.value)})} /></label>
                 <label><span>Ảnh mỗi chu kỳ</span><input type="number" min="0" max="10" value={mediaOptions.imagesPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, imagesPerCycle: Number(event.target.value)})} /></label>
                 <label><span>Intro (giây)</span><input type="number" min="0" max="30" value={mediaOptions.introSeconds} onChange={(event) => setMediaOptions({...mediaOptions, introSeconds: Number(event.target.value)})} /></label>
