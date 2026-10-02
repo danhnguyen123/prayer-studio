@@ -962,8 +962,14 @@ export const App = () => {
                             </div>
                             <div className="render-status-actions">
                               {lane.downloadUrl && (
-                                <a href={lane.downloadUrl} download>
-                                  Download {formatBytes(lane.outputSizeInBytes)}
+                                <a
+                                  className="download-button"
+                                  href={lane.downloadUrl}
+                                  download
+                                  aria-label={`Tải video ${status?.languages.find((item) => item.code === code)?.label || code}`}
+                                >
+                                  <span aria-hidden="true">↓</span>
+                                  Tải video {formatBytes(lane.outputSizeInBytes)}
                                 </a>
                               )}
                               {activeRenderStages.has(lane.stage) && (
