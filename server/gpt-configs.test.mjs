@@ -45,7 +45,14 @@ test('GPT Terra prayer targets use the calibrated word budgets', async () => {
 test('UI defaults every language to GPT Terra direct from Korean', async () => {
   const app = await fs.readFile(path.join(PROJECT_ROOT, 'web/src/App.tsx'), 'utf8');
   for (const code of Object.keys(LANGUAGE_DEFINITIONS)) {
-    assert.match(app, new RegExp(`${code}: 'gpt-korea'`));
+    assert.match(app, new RegExp(`${code}: ["']gpt-korea["']`));
   }
-  assert.match(app, /value="gpt-korea">GPT Terra từ tiếng Hàn/);
+  assert.match(app, /value="gpt-korea">\s*GPT Terra từ tiếng Hàn/);
+});
+
+test('Upload page can create its own workflow from navigation', async () => {
+  const app = await fs.readFile(path.join(PROJECT_ROOT, 'web/src/App.tsx'), 'utf8');
+  assert.match(app, /page === "upload"[\s\S]+createUploadWorkflow/);
+  assert.match(app, /"\/api\/workflows\/skip-script"/);
+  assert.doesNotMatch(app, />\s*Bỏ qua kịch bản\s*</);
 });

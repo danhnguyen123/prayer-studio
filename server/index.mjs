@@ -452,8 +452,14 @@ app.get('/api/batch/render/:jobId/:language/download', async (request, response,
   }
 });
 
-app.get('/api/workflows/current', (_request, response) => {
-  response.json(jobs.listJobs({type: 'prayer-workflow'})[0] || null);
+app.get('/api/workflows/current', (request, response) => {
+  const kind = String(request.query.kind || 'any');
+  const workflow = jobs.listJobs({type: 'prayer-workflow'}).find((item) => {
+    if (kind === 'script') return !item.skippedScript;
+    if (kind === 'upload') return Boolean(item.skippedScript);
+    return true;
+  });
+  response.json(workflow || null);
 });
 
 app.get('/api/render-jobs', (_request, response) => {
