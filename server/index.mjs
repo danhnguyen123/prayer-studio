@@ -11,7 +11,7 @@ try {
   if (error.code !== 'ENOENT') console.warn(`Không đọc được .env: ${error.message}`);
 }
 
-const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, batchRenderer, {prepVoiceover}] =
+const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, batchRenderer, {prepVoiceover}, {startUploadCleanup}] =
   await Promise.all([
     import('./constants.mjs'),
     import('./translation-provider.mjs'),
@@ -19,6 +19,7 @@ const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScri
     import('./job-store.mjs'),
     import('./aws-batch-render.mjs'),
     import('./voiceover-prep.mjs'),
+    import('./upload-cleanup.mjs'),
   ]);
 
 const app = express();
@@ -29,6 +30,11 @@ const host =
   process.env.APP_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 const uploadRoot = path.join(PROJECT_ROOT, 'workspace', 'uploads');
 mkdirSync(uploadRoot, {recursive: true});
+startUploadCleanup({
+  uploadRoot,
+  retentionHours: Number(process.env.UPLOAD_RETENTION_HOURS || 24),
+  intervalHours: Number(process.env.UPLOAD_CLEANUP_INTERVAL_HOURS || 1),
+});
 
 const upload = multer({
   storage: multer.diskStorage({

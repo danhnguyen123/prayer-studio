@@ -13,6 +13,10 @@ test('FFmpeg worker shifts voice captions after intro and fades verse', () => {
   });
   assert.match(ass, /\\fad\(3000,1000\)/);
   assert.match(ass, /Verse line 1\\NVerse line 2/);
+  assert.match(ass, /Style: Verse,Noto Serif,92,/);
+  assert.match(ass, /Style: VerseFrame,Arial,10,/);
+  assert.match(ass, /Dialogue: 0,0:00:00\.00,0:00:08\.00,VerseFrame/);
+  assert.match(ass, /\\p1}m 230 173 l 1690 173 l 1690 907/);
   assert.match(ass, /0:00:08\.50,0:00:09\.50,Caption/);
   assert.match(ass, /Outline, Shadow/);
   assert.match(ass, /Style: Caption,Noto Sans,112,/);

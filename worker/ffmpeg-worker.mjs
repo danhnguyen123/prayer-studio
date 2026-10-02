@@ -56,8 +56,15 @@ export const buildAss = (value) => {
   const events = [];
   const introMs = Math.round(Number(value.introSeconds || 0) * 1000);
   if (introMs > 0 && String(value.introText || '').trim()) {
+    const left = Math.round(value.width * 0.12);
+    const right = Math.round(value.width * 0.88);
+    const top = Math.round(value.height * 0.16);
+    const bottom = Math.round(value.height * 0.84);
     events.push(
-      `Dialogue: 0,${assTime(0)},${assTime(introMs)},Verse,,0,0,0,,{\\fad(3000,1000)}${assText(value.introText.trim())}`,
+      `Dialogue: 0,${assTime(0)},${assTime(introMs)},VerseFrame,,0,0,0,,{\\fad(3000,1000)\\an7\\pos(0,0)\\p1}m ${left} ${top} l ${right} ${top} l ${right} ${bottom} l ${left} ${bottom} l ${left} ${top}{\\p0}`,
+    );
+    events.push(
+      `Dialogue: 1,${assTime(0)},${assTime(introMs)},Verse,,0,0,0,,{\\fad(3000,1000)}${assText(value.introText.trim())}`,
     );
   }
   for (const caption of value.captions || []) {
@@ -78,7 +85,8 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,Noto Sans,112,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,0,0,0,100,100,-0.4,0,1,3.5,0.7,5,120,120,80,1
-Style: Verse,Noto Serif,54,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,-1,0,0,100,100,-0.4,0,1,3,1,5,120,120,80,1
+Style: Verse,Noto Serif,92,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,-1,0,0,100,100,-0.4,0,1,1.8,0.4,5,150,150,80,1
+Style: VerseFrame,Arial,10,&HFF000000,&HFF000000,&H70FFFFFF,&HFF000000,0,0,0,0,100,100,0,0,1,2,0,7,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
