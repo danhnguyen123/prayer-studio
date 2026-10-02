@@ -47,5 +47,5 @@ test('UI defaults every language to GPT Terra direct from Korean', async () => {
   for (const code of Object.keys(LANGUAGE_DEFINITIONS)) {
     assert.match(app, new RegExp(`${code}: 'gpt-korea'`));
   }
-  assert.match(app, /value="gpt-korea">Rewrite thẳng từ tiếng Hàn[^<]+Mặc định/);
+  assert.match(app, /value="gpt-korea">GPT Terra từ tiếng Hàn/);
 });

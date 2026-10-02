@@ -40,6 +40,8 @@ export type Job = {
   message: string;
   error?: string;
   logs: string[];
+  createdAt?: string;
+  updatedAt?: string;
   selectedLanguages?: string[];
   languages?: Record<string, LanguageJobState>;
   result?: Record<string, any> & {
@@ -78,4 +80,5 @@ export type LanguageJobState = {
   renderStartedAt?: string;
   renderFinishedAt?: string;
   cancelRequested?: boolean;
+  localOutputPath?: string;
 };

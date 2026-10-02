@@ -10,6 +10,7 @@ import {buildMediaPlan} from './media-plan.mjs';
 import {appendJobLog, getJob, mutateJob, updateJob} from './job-store.mjs';
 import {
   awsCredentials,
+  downloadObject,
   getJson,
   headObject,
   putJson,
@@ -263,6 +264,8 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
     progress: 0.23,
     message: 'AWS Batch đang cấp EC2 Spot',
     batchJobId: submitted.jobId,
+    outputKey,
+    statusKey,
   });
   if (isStopRequested(jobId, code)) {
     await stopRemoteBatchJob({client, batchJobId: submitted.jobId, code});
@@ -302,6 +305,22 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
         objectKey: outputKey,
         region: config.region,
       });
+      let localOutputPath;
+      const completedRoot = process.env.COMPLETED_VIDEO_ROOT?.trim();
+      if (completedRoot) {
+        localOutputPath = path.join(completedRoot, workflowId, `${code}-${stamp}.mp4`);
+        setLanguage(jobId, code, {
+          stage: 'downloading-result',
+          progress: 0.98,
+          message: 'Đang lưu video hoàn thành vào media volume',
+        });
+        await downloadObject({
+          bucketName: config.bucketName,
+          objectKey: outputKey,
+          region: config.region,
+          destination: localOutputPath,
+        });
+      }
       setLanguage(jobId, code, {
         stage: 'completed',
         progress: 1,
@@ -310,6 +329,7 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
         downloadUrl: `/api/batch/render/${jobId}/${code}/download`,
         outputSizeInBytes: object.ContentLength,
         outputKey,
+        localOutputPath,
       });
       return;
     }

@@ -31,6 +31,7 @@ const stageLabels: Record<string, string> = {
   'script-ready': 'Kịch bản sẵn sàng', planning: 'Đang tạo timeline',
   'uploading-media': 'Đang tải media lên S3',
   'starting-batch': 'Đang khởi chạy Batch', 'batch-queued': 'Đang chờ EC2 Spot',
+  'downloading-result': 'Đang lưu vào media volume',
   rendering: 'FFmpeg đang render', stopping: 'Đang dừng', cancelled: 'Đã dừng',
   completed: 'Video sẵn sàng', failed: 'Có lỗi',
 };
@@ -69,6 +70,12 @@ const StepLabel = ({number, children}: {number: string; children: React.ReactNod
   <div className="step-label"><span>{number}</span><h2>{children}</h2></div>
 );
 
+type PageName = 'write' | 'upload' | 'renders';
+const pageFromPath = (): PageName => {
+  const value = window.location.pathname.replace(/^\//, '').split('/')[0];
+  return value === 'upload' || value === 'renders' ? value : 'write';
+};
+
 export const App = () => {
   const [status, setStatus] = useState<Status | null>(null);
   const [koreanScript, setKoreanScript] = useState('');
@@ -80,6 +87,11 @@ export const App = () => {
   const [processingMode, setProcessingMode] = useState<'standard' | 'batch'>('standard');
   const [workflow, setWorkflow] = useState<Job | null>(null);
   const [renderJob, setRenderJob] = useState<Job | null>(null);
+  const [renderJobs, setRenderJobs] = useState<Job[]>([]);
+  const [activePage, setActivePage] = useState<PageName>(pageFromPath);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem('prayer-sidebar-collapsed') === 'true',
+  );
   const [files, setFiles] = useState<Record<string, LocalFiles>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
@@ -91,9 +103,9 @@ export const App = () => {
   const [introTexts, setIntroTexts] = useState<Record<string, string>>({});
   const [clockNow, setClockNow] = useState(() => Date.now());
 
-  const hasActiveRenderTimer = Object.values(renderJob?.languages || {}).some(
+  const hasActiveRenderTimer = renderJobs.some((job) => Object.values(job.languages || {}).some(
     (language) => language.renderStartedAt && !language.renderFinishedAt,
-  );
+  ));
 
   useEffect(() => {
     if (!hasActiveRenderTimer) return undefined;
@@ -117,6 +129,50 @@ export const App = () => {
     }).catch((nextError) => setError(nextError.message));
   }, []);
 
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const [savedWorkflow, savedRenders] = await Promise.all([
+          api<Job | null>('/api/workflows/current'),
+          api<Job[]>('/api/render-jobs'),
+        ]);
+        if (savedWorkflow) setWorkflow(savedWorkflow);
+        setRenderJobs(savedRenders);
+        setRenderJob(savedRenders[0] || null);
+      } catch (nextError) {
+        setError((nextError as Error).message);
+      }
+    };
+    void restore();
+    const onPopState = () => setActivePage(pageFromPath());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const next = await api<Job[]>('/api/render-jobs');
+        setRenderJobs(next);
+        setRenderJob(next[0] || null);
+      } catch {
+        // Giữ UI hiện tại khi mất mạng tạm thời.
+      }
+    };
+    const timer = window.setInterval(refresh, activePage === 'renders' ? 2000 : 8000);
+    return () => window.clearInterval(timer);
+  }, [activePage]);
+
+  const navigate = (page: PageName) => {
+    window.history.pushState({}, '', `/${page}`);
+    setActivePage(page);
+  };
+
+  const toggleSidebar = () => setSidebarCollapsed((current) => {
+    window.localStorage.setItem('prayer-sidebar-collapsed', String(!current));
+    return !current;
+  });
+
   const workflowLanguages = useMemo(
     () => workflow?.selectedLanguages || selectedLanguages,
     [workflow, selectedLanguages],
@@ -139,6 +195,7 @@ export const App = () => {
         }),
       });
       await waitForJob(jobId, setWorkflow);
+      window.localStorage.setItem('prayer-workflow-id', jobId);
     } catch (nextError) { setError((nextError as Error).message); }
     finally { setActionBusy('workflow', false); }
   };
@@ -150,6 +207,7 @@ export const App = () => {
         method: 'POST', body: JSON.stringify({languages: selectedLanguages}),
       });
       setWorkflow(await api<Job>(`/api/jobs/${jobId}`));
+      window.localStorage.setItem('prayer-workflow-id', jobId);
     } catch (nextError) { setError((nextError as Error).message); }
     finally { setActionBusy('workflow', false); }
   };
@@ -173,181 +231,63 @@ export const App = () => {
       const {jobId} = await api<{jobId: string}>('/api/batch/render', {
         method: 'POST', body: JSON.stringify({workflowId: workflow.id, languages, ...mediaOptions, introTexts}),
       });
-      await waitForJob(jobId, setRenderJob);
+      const submitted = await api<Job>(`/api/jobs/${jobId}`);
+      setRenderJob(submitted);
+      setRenderJobs((current) => [submitted, ...current.filter((item) => item.id !== submitted.id)]);
+      navigate('renders');
     } catch (nextError) { setError((nextError as Error).message); }
     finally { setActionBusy('render', false); }
   };
 
-  const stopRenderLanguage = async (code: string) => {
-    if (!renderJob) return;
-    setError(''); setActionBusy(`stop-${code}`, true);
+  const stopRenderLanguage = async (job: Job, code: string) => {
+    setError(''); setActionBusy(`stop-${job.id}-${code}`, true);
     try {
-      setRenderJob(await api<Job>(`/api/batch/render/${renderJob.id}/${code}/stop`, {method: 'POST'}));
+      const updated = await api<Job>(`/api/batch/render/${job.id}/${code}/stop`, {method: 'POST'});
+      setRenderJobs((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch (nextError) { setError((nextError as Error).message); }
-    finally { setActionBusy(`stop-${code}`, false); }
+    finally { setActionBusy(`stop-${job.id}-${code}`, false); }
   };
 
-  const stopAllRenders = async () => {
-    if (!renderJob) return;
-    setError(''); setActionBusy('stop-all', true);
+  const stopAllRenders = async (job: Job) => {
+    setError(''); setActionBusy(`stop-all-${job.id}`, true);
     try {
-      setRenderJob(await api<Job>(`/api/batch/render/${renderJob.id}/stop`, {method: 'POST'}));
+      const updated = await api<Job>(`/api/batch/render/${job.id}/stop`, {method: 'POST'});
+      setRenderJobs((current) => current.map((item) => item.id === updated.id ? updated : item));
     } catch (nextError) { setError((nextError as Error).message); }
-    finally { setActionBusy('stop-all', false); }
+    finally { setActionBusy(`stop-all-${job.id}`, false); }
   };
 
   const renderableLanguages = workflowLanguages.filter((code) => workflow?.languages?.[code]?.assets);
   const workflowActive = workflow && workflow.status !== 'completed';
 
-  return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="brand-mark" aria-hidden="true"><span /><span /></div>
-        <div>
-          <p className="eyebrow">LOCAL PRODUCTION WORKSPACE</p><h1>Prayer Studio</h1>
-        </div>
-        <div className="status-stack">
-          <div className={`status-pill ${status?.providers?.openai.configured ? 'ready' : 'warning'}`}><span /> OpenAI {status?.providers?.openai.configured ? 'sẵn sàng' : 'chưa có API key'}</div>
-          <div className={`status-pill ${status?.batchConfigured ? 'ready' : 'warning'}`}><span /> AWS Batch {status?.batchConfigured ? 'sẵn sàng' : 'chưa cấu hình'}</div>
-          <div className="model-name">{status?.translationModel || 'Đang kiểm tra...'} · medium · {status?.batchRegion || 'AWS'}</div>
-        </div>
-      </header>
+  const renderLanguageCard = (code: string) => {
+    const definition = status?.languages.find((item) => item.code === code);
+    const lane = workflow?.languages?.[code] as LanguageJobState | undefined;
+    const pair = files[code] || {};
+    const scriptReady = lane?.stage === 'script-ready';
+    const assetsReady = Boolean(lane?.assets);
+    return <article className="language-card" key={code}>
+      <div className="language-card-head"><div><span className={`stage-dot ${lane?.stage === 'failed' ? 'failed' : scriptReady ? 'done' : 'working'}`} /><strong>{definition?.label || lane?.label || code}</strong></div><span className={`stage-badge ${lane?.stage || 'queued'}`}>{stageLabels[lane?.stage || 'queued'] || lane?.message}</span></div>
+      {activePage === 'write' && <><div className="lane-progress"><span style={{width: `${(lane?.progress || 0) * 100}%`}} /></div><p className="lane-message">{lane?.message}</p>{scriptReady && <div className="script-ready-line"><span>✓ Kịch bản đã sẵn sàng</span>{lane?.scriptDownloadUrl && <a href={lane.scriptDownloadUrl} download>Download TXT</a>}{!lane?.skippedScript && lane?.outputPath && <a href={`/api/workflows/${workflow?.id}/${code}/voiceover`} download>Voiceover chia phần</a>}</div>}</>}
+      {activePage === 'upload' && scriptReady && <div className="production-zone">
+        <div className="production-inputs"><div className="upload-grid">
+          <label><span>Voiceover MP3</span><input type="file" accept="audio/mpeg,.mp3" onChange={(event) => setFiles((current) => ({...current, [code]: {...current[code], audio: event.target.files?.[0]}}))} /><small>{pair.audio?.name || lane?.assets?.audioName || 'Chưa chọn file'}</small></label>
+          <label><span>Phụ đề SRT</span><input type="file" accept=".srt,application/x-subrip" onChange={(event) => setFiles((current) => ({...current, [code]: {...current[code], srt: event.target.files?.[0]}}))} /><small>{pair.srt?.name || lane?.assets?.srtName || 'Chưa chọn file'}</small></label>
+        </div><label className="verse-inline"><span>Câu Kinh Thánh intro</span><textarea value={introTexts[code] || ''} onChange={(event) => setIntroTexts((current) => ({...current, [code]: event.target.value}))} rows={3} /></label></div>
+        <div className="card-actions"><button className="secondary" disabled={busy[`upload-${code}`] || !pair.audio || !pair.srt} onClick={() => uploadAssets(code)}>{busy[`upload-${code}`] ? 'Đang upload…' : assetsReady ? 'Upload lại MP3 + SRT' : 'Upload MP3 + SRT'}</button><button className="primary" disabled={!assetsReady || !status?.batchConfigured || busy.render} onClick={() => renderLanguages([code])}>Submit render</button></div>
+      </div>}
+    </article>;
+  };
 
-      {error && <div className="alert" role="alert"><strong>Cần xử lý:</strong> {error}<button onClick={() => setError('')} aria-label="Đóng thông báo">×</button></div>}
-
+  return <div className={`app-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <aside className="sidebar"><div className="sidebar-brand"><div className="brand-mark"><span /><span /></div>{!sidebarCollapsed && <div><strong>Prayer Studio</strong><small>FFmpeg workspace</small></div>}</div><nav>{([['write', '01', 'Write Script'], ['upload', '02', 'Upload & Submit'], ['renders', '03', 'Render Queue']] as const).map(([page, number, label]) => <button key={page} className={activePage === page ? 'active' : ''} onClick={() => navigate(page)}><b>{number}</b>{!sidebarCollapsed && <span>{label}</span>}</button>)}</nav><button className="sidebar-toggle" onClick={toggleSidebar}>{sidebarCollapsed ? '»' : '« Thu gọn'}</button></aside>
+    <div className="app-content"><header className="topbar"><div><p className="eyebrow">PRODUCTION WORKSPACE</p><h1>{activePage === 'write' ? 'Write Script' : activePage === 'upload' ? 'Upload & Submit' : 'Render Queue'}</h1></div><div className="status-stack"><div className={`status-pill ${status?.batchConfigured ? 'ready' : 'warning'}`}><span /> AWS Batch {status?.batchConfigured ? 'sẵn sàng' : 'chưa cấu hình'}</div><div className="model-name">{status?.translationModel || 'Đang kiểm tra…'} · {status?.batchRegion}</div></div></header>
+      {error && <div className="alert"><strong>Cần xử lý:</strong> {error}<button onClick={() => setError('')}>×</button></div>}
       <main>
-        {!workflow ? (
-          <section className="panel source-panel">
-            <StepLabel number="01">Dịch kịch bản nguồn</StepLabel>
-            <div className="language-row">
-              {status?.languages.map((language) => (
-                <label key={language.code} className={`language-chip ${selectedLanguages.includes(language.code) ? 'active' : ''}`}>
-                  <input type="checkbox" checked={selectedLanguages.includes(language.code)} onChange={() => toggleLanguage(language.code)} />{language.label}
-                </label>
-              ))}
-            </div>
-            <div className="api-controls">
-              <label>
-                <span>GPT provider</span>
-                <select
-                  className="mode-select"
-                  value={translationProvider}
-                  onChange={(event) => {
-                    const provider = event.target.value as 'openai' | 'kie';
-                    setTranslationProvider(provider);
-                    if (provider === 'kie') setProcessingMode('standard');
-                  }}
-                >
-                  <option value="openai" disabled={!status?.providers?.openai.configured}>OpenAI chính thức · Mặc định</option>
-                  <option value="kie" disabled={!status?.providers?.kie.configured}>Kie · Dự phòng</option>
-                </select>
-              </label>
-              <label>
-                <span>Processing</span>
-                <select
-                  className="mode-select"
-                  value={processingMode}
-                  disabled={translationProvider !== 'openai'}
-                  onChange={(event) => setProcessingMode(event.target.value as 'standard' | 'batch')}
-                >
-                  <option value="standard">Standard · Có kết quả ngay</option>
-                  <option value="batch">Batch · Tiết kiệm 50%</option>
-                </select>
-              </label>
-              <small>{processingMode === 'batch' ? 'Batch chạy bất đồng bộ và có thể mất đến 24 giờ.' : 'Mỗi ngôn ngữ được xử lý ngay bằng Responses API.'}</small>
-            </div>
-            <div className="rewrite-choice-list">
-              {status?.languages.filter((language) => selectedLanguages.includes(language.code)).map((language) => (
-                <div className="rewrite-choice-row" key={language.code}>
-                  <strong>{language.label}</strong>
-                  <select
-                    className="mode-select"
-                    aria-label={`Cách tạo kịch bản ${language.label}`}
-                    value={rewriteModes[language.code]}
-                    onChange={(event) => setRewriteModes((current) => ({...current, [language.code]: event.target.value}))}
-                  >
-                    <option value="translation">Dùng nguyên bản dịch</option>
-                    <option value="deepseek">Rewrite · DeepSeek v4 Pro</option>
-                    <option value="gpt">Rewrite từ bản dịch · GPT‑5.6 Terra medium</option>
-                    <option value="gpt-korea">Rewrite thẳng từ tiếng Hàn · GPT‑5.6 Terra medium · Mặc định</option>
-                  </select>
-                </div>
-              ))}
-            </div>
-            <textarea value={koreanScript} onChange={(event) => setKoreanScript(event.target.value)} placeholder="여기에 한국어 기도문을 붙여넣으세요…" spellCheck={false} />
-            <div className="actions">
-              <button className="primary" disabled={busy.workflow || koreanScript.trim().length < 20 || selectedLanguages.length === 0} onClick={startWorkflow}>
-                {busy.workflow ? 'Đang khởi tạo…' : 'Dịch & tạo kịch bản'}
-              </button>
-              <button className="ghost skip-script-button" disabled={busy.workflow || selectedLanguages.length === 0} onClick={skipScriptStep}>
-                Bỏ qua · dùng MP3/SRT cũ
-              </button>
-              <span>{koreanScript.length.toLocaleString('vi-VN')} ký tự</span>
-            </div>
-          </section>
-        ) : (
-          <>
-            <section className="panel workflow-panel">
-              <div className="workflow-heading">
-                <div><StepLabel number="02">Tiến độ theo ngôn ngữ</StepLabel><p className="section-copy">Khi kịch bản sẵn sàng, tải file TXT và dùng nó để tạo MP3/SRT bên ngoài.</p></div>
-              <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setRenderJob(null); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
-              </div>
-              <div className="progress-track"><span style={{width: `${workflow.progress * 100}%`}} /></div>
-              <div className="language-workflows">
-                {workflowLanguages.map((code) => {
-                  const definition = status?.languages.find((item) => item.code === code);
-                  const lane = workflow.languages?.[code] as LanguageJobState | undefined;
-                  const renderLane = renderJob?.languages?.[code];
-                  const pair = files[code] || {};
-                  const scriptReady = lane?.stage === 'script-ready';
-                  const assetsReady = Boolean(lane?.assets);
-                  return (
-                    <article className="language-card" key={code}>
-                      <div className="language-card-head"><div><span className={`stage-dot ${lane?.stage === 'failed' ? 'failed' : scriptReady ? 'done' : 'working'}`} /><strong>{definition?.label || lane?.label || code}</strong><small className="mode-label">{lane?.skippedScript ? 'Bỏ qua kịch bản · dùng media cũ' : `${lane?.rewriteMode === 'deepseek' ? 'Rewrite · DeepSeek v4 Pro' : lane?.rewriteMode === 'gpt' ? 'Rewrite · GPT‑5.6 Terra medium' : lane?.rewriteMode === 'gpt-korea' ? 'Rewrite từ tiếng Hàn · GPT‑5.6 Terra' : 'Dùng bản dịch'} · ${lane?.translationProvider === 'kie' ? 'Kie' : 'OpenAI'}${lane?.processingMode === 'batch' ? ' Batch' : ''}`}</small></div><span className={`stage-badge ${lane?.stage || 'queued'}`}>{stageLabels[lane?.stage || 'queued'] || lane?.message}</span></div>
-                      <div className="lane-progress"><span style={{width: `${(lane?.progress || 0) * 100}%`}} /></div>
-                      <p className={lane?.stage === 'failed' ? 'lane-message error-text' : 'lane-message'}>{lane?.message || 'Đang chờ'}</p>
-                      {scriptReady && (
-                        <div className="production-zone">
-                          <div className="script-ready-line"><span>✓ {lane.skippedScript ? 'Sẵn sàng dùng lại MP3/SRT cũ' : 'Kịch bản đã hoàn tất'}</span>{lane.scriptDownloadUrl && <a href={lane.scriptDownloadUrl} download>Download TXT</a>}{!lane.skippedScript && lane.outputPath && <a href={`/api/workflows/${workflow.id}/${code}/voiceover`} download>Tải voiceover (chia phần)</a>}</div>
-                          <div className="production-inputs">
-                            <div className="upload-grid">
-                              <label><span>Voiceover MP3</span><input type="file" accept="audio/mpeg,.mp3" onChange={(event) => setFiles((current) => ({...current, [code]: {...current[code], audio: event.target.files?.[0]}}))} /><small>{pair.audio?.name || lane.assets?.audioName || 'Chưa chọn file'}</small></label>
-                              <label><span>Phụ đề SRT</span><input type="file" accept=".srt,application/x-subrip" onChange={(event) => setFiles((current) => ({...current, [code]: {...current[code], srt: event.target.files?.[0]}}))} /><small>{pair.srt?.name || lane.assets?.srtName || 'Chưa chọn file'}</small></label>
-                            </div>
-                            <label className="verse-inline"><span>Câu Kinh Thánh intro ({mediaOptions.introSeconds}s · 4–6 dòng)</span><textarea value={introTexts[code] || ''} onChange={(event) => setIntroTexts((current) => ({...current, [code]: event.target.value}))} rows={3} placeholder={'“Hãy đến cùng Ta, hỡi những ai mệt mỏi và gánh nặng,\nvà Ta sẽ cho các con được nghỉ ngơi.”\n— Mátthêu 11:28'} spellCheck={false} /></label>
-                          </div>
-                          <div className="card-actions">
-                            <button className="secondary" disabled={busy[`upload-${code}`] || !pair.audio || !pair.srt} onClick={() => uploadAssets(code)}>{busy[`upload-${code}`] ? 'Đang upload…' : assetsReady ? 'Upload lại MP3 + SRT' : 'Upload MP3 + SRT'}</button>
-                            <button className="primary" disabled={!assetsReady || !status?.batchConfigured || busy.render} onClick={() => renderLanguages([code])}>Render FFmpeg · worker 4 vCPU</button>
-                          </div>
-                        </div>
-                      )}
-                      {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span>{renderLane.renderStartedAt && <span className="render-timer">⏱ FFmpeg: {formatElapsedTime(renderLane.renderStartedAt, renderLane.renderFinishedAt, clockNow)}</span>}</div><div className="render-status-actions">{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}{activeRenderStages.has(renderLane.stage) && <button className="danger compact" disabled={busy[`stop-${code}`] || renderLane.stage === 'stopping'} onClick={() => stopRenderLanguage(code)}>{busy[`stop-${code}`] || renderLane.stage === 'stopping' ? 'Đang dừng…' : 'Dừng render'}</button>}</div></div>}
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="panel render-settings">
-              <div><StepLabel number="03">Nguồn hình & AWS Batch FFmpeg</StepLabel><p className="section-copy">Tối đa 5 EC2 Spot worker ARM, mỗi worker 4 vCPU, render đồng thời từng ngôn ngữ. Media được cache trên S3.</p></div>
-              <div className="settings-grid">
-                <label><span>Thư mục footage</span><input value={mediaOptions.videoDir} onChange={(event) => setMediaOptions({...mediaOptions, videoDir: event.target.value})} /></label>
-                <label><span>Thư mục ảnh tĩnh</span><input value={mediaOptions.imageDir} onChange={(event) => setMediaOptions({...mediaOptions, imageDir: event.target.value})} /></label>
-                <label><span>Số video nguồn</span><input type="number" min="10" max="15" value={mediaOptions.videoCount} onChange={(event) => setMediaOptions({...mediaOptions, videoCount: Number(event.target.value)})} /></label>
-                <label><span>Random seed (tự tạo · bấm 🎲 để đổi)</span><div className="seed-field"><input value={mediaOptions.seed} onChange={(event) => setMediaOptions({...mediaOptions, seed: event.target.value})} /><button type="button" className="seed-dice" title="Đổi thứ tự ngẫu nhiên" onClick={() => setMediaOptions((current) => ({...current, seed: randomSeed()}))}>🎲</button></div></label>
-                <label><span>Video mỗi chu kỳ</span><input type="number" min="0" max="10" value={mediaOptions.videosPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, videosPerCycle: Number(event.target.value)})} /></label>
-                <label><span>Ảnh mỗi chu kỳ</span><input type="number" min="0" max="10" value={mediaOptions.imagesPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, imagesPerCycle: Number(event.target.value)})} /></label>
-                <label><span>Intro (giây)</span><input type="number" min="0" max="30" value={mediaOptions.introSeconds} onChange={(event) => setMediaOptions({...mediaOptions, introSeconds: Number(event.target.value)})} /></label>
-                <label><span>File nhạc nền</span><input value={mediaOptions.musicPath} onChange={(event) => setMediaOptions({...mediaOptions, musicPath: event.target.value})} placeholder="Để trống = tắt nhạc nền" /></label>
-                <label><span>Âm lượng nhạc intro (tắt khi voiceover)</span><input type="number" min="0" max="1" step="0.05" value={mediaOptions.musicIntroVolume} onChange={(event) => setMediaOptions({...mediaOptions, musicIntroVolume: Number(event.target.value)})} /></label>
-              </div>
-              <div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ đã có MP3/SRT</strong><span>{status?.batchConfigured ? 'Sẵn sàng render đồng thời trên tối đa 5 worker · 4 vCPU/worker' : 'Thêm cấu hình AWS Batch trong .env để render'}</span></div><div className="parallel-actions"><button className="primary" disabled={!status?.batchConfigured || renderableLanguages.length === 0 || busy.render} onClick={() => renderLanguages(renderableLanguages)}>{busy.render ? 'AWS Batch đang render…' : `Render đồng thời ${renderableLanguages.length || ''} video`}</button>{renderJob && Object.values(renderJob.languages || {}).some((language) => activeRenderStages.has(language.stage)) && <button className="danger" disabled={busy['stop-all']} onClick={stopAllRenders}>{busy['stop-all'] ? 'Đang dừng…' : 'Dừng tất cả & giải phóng EC2'}</button>}</div></div>
-            </section>
-          </>
-        )}
-      </main>
-      <footer><span>Prayer Studio</span><span>OpenAI, Kie, DeepSeek và AWS credentials chỉ tồn tại ở backend</span></footer>
+        {activePage === 'write' && <>{!workflow ? <section className="panel source-panel"><StepLabel number="01">Kịch bản tiếng Hàn</StepLabel><div className="language-row">{status?.languages.map((language) => <label key={language.code} className={`language-chip ${selectedLanguages.includes(language.code) ? 'active' : ''}`}><input type="checkbox" checked={selectedLanguages.includes(language.code)} onChange={() => toggleLanguage(language.code)} />{language.label}</label>)}</div><div className="api-controls"><label><span>GPT provider</span><select className="mode-select" value={translationProvider} onChange={(event) => setTranslationProvider(event.target.value as 'openai' | 'kie')}><option value="openai">OpenAI</option><option value="kie">Kie</option></select></label><label><span>Processing</span><select className="mode-select" value={processingMode} onChange={(event) => setProcessingMode(event.target.value as 'standard' | 'batch')}><option value="standard">Standard</option><option value="batch">Batch</option></select></label></div><div className="rewrite-choice-list">{status?.languages.filter((language) => selectedLanguages.includes(language.code)).map((language) => <div className="rewrite-choice-row" key={language.code}><strong>{language.label}</strong><select className="mode-select" value={rewriteModes[language.code]} onChange={(event) => setRewriteModes((current) => ({...current, [language.code]: event.target.value}))}><option value="translation">Dùng bản dịch</option><option value="deepseek">DeepSeek v4 Pro</option><option value="gpt">GPT Terra từ bản dịch</option><option value="gpt-korea">GPT Terra từ tiếng Hàn</option></select></div>)}</div><textarea value={koreanScript} onChange={(event) => setKoreanScript(event.target.value)} placeholder="여기에 한국어 기도문을 붙여넣으세요…" /><div className="actions"><button className="primary" disabled={busy.workflow || koreanScript.trim().length < 20} onClick={startWorkflow}>Dịch & tạo kịch bản</button><button className="ghost" onClick={skipScriptStep}>Bỏ qua kịch bản</button></div></section> : <section className="panel workflow-panel"><div className="workflow-heading"><StepLabel number="01">Tiến độ kịch bản</StepLabel><div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="primary" disabled={Boolean(workflowActive)} onClick={() => navigate('upload')}>Tiếp tục Upload</button><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => setWorkflow(null)}>Workflow mới</button></div></div><div className="language-workflows">{workflowLanguages.map(renderLanguageCard)}</div></section>}</>}
+        {activePage === 'upload' && <>{!workflow ? <section className="panel empty-state"><h2>Chưa có workflow</h2><button className="primary" onClick={() => navigate('write')}>Về Write Script</button></section> : <><section className="panel workflow-panel"><StepLabel number="02">MP3, SRT & Submit</StepLabel><div className="language-workflows">{workflowLanguages.map(renderLanguageCard)}</div></section><section className="panel render-settings"><StepLabel number="02">Nguồn hình & FFmpeg</StepLabel><div className="settings-grid"><label><span>Footage</span><input value={mediaOptions.videoDir} onChange={(event) => setMediaOptions({...mediaOptions, videoDir: event.target.value})} /></label><label><span>Ảnh tĩnh</span><input value={mediaOptions.imageDir} onChange={(event) => setMediaOptions({...mediaOptions, imageDir: event.target.value})} /></label><label><span>Video nguồn</span><input type="number" value={mediaOptions.videoCount} onChange={(event) => setMediaOptions({...mediaOptions, videoCount: Number(event.target.value)})} /></label><label><span>Random seed</span><div className="seed-field"><input value={mediaOptions.seed} onChange={(event) => setMediaOptions({...mediaOptions, seed: event.target.value})} /><button className="seed-dice" onClick={() => setMediaOptions({...mediaOptions, seed: randomSeed()})}>🎲</button></div></label><label><span>Video/chu kỳ</span><input type="number" value={mediaOptions.videosPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, videosPerCycle: Number(event.target.value)})} /></label><label><span>Ảnh/chu kỳ</span><input type="number" value={mediaOptions.imagesPerCycle} onChange={(event) => setMediaOptions({...mediaOptions, imagesPerCycle: Number(event.target.value)})} /></label><label><span>Intro (giây)</span><input type="number" value={mediaOptions.introSeconds} onChange={(event) => setMediaOptions({...mediaOptions, introSeconds: Number(event.target.value)})} /></label><label><span>Nhạc intro</span><input value={mediaOptions.musicPath} onChange={(event) => setMediaOptions({...mediaOptions, musicPath: event.target.value})} /></label></div><div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ sẵn sàng</strong><span>Submit tối đa 5 worker đồng thời</span></div><button className="primary" disabled={!renderableLanguages.length || busy.render} onClick={() => renderLanguages(renderableLanguages)}>Submit render tất cả</button></div></section></>}</>}
+        {activePage === 'renders' && <section className="panel workflow-panel"><div className="workflow-heading"><div><StepLabel number="03">Video đang render</StepLabel><p className="section-copy">Trạng thái được giữ trên server khi đóng browser.</p></div></div>{renderJobs.length === 0 ? <div className="empty-state"><p>Chưa có video nào.</p><button className="primary" onClick={() => navigate('upload')}>Upload & Submit</button></div> : <div className="render-job-list">{renderJobs.map((job) => <section className="render-job-group" key={job.id}><div className="render-job-heading"><div><strong>{new Date(job.createdAt || Date.now()).toLocaleString('vi-VN')}</strong><small>{job.message}</small></div>{Object.values(job.languages || {}).some((lane) => activeRenderStages.has(lane.stage)) && <button className="danger compact" disabled={busy[`stop-all-${job.id}`]} onClick={() => stopAllRenders(job)}>Dừng tất cả</button>}</div>{Object.entries(job.languages || {}).map(([code, lane]) => <article className={`render-queue-item ${lane.stage}`} key={code}><div><strong>{status?.languages.find((item) => item.code === code)?.label || code}</strong><span>{stageLabels[lane.stage] || lane.message} · {Math.round(lane.progress * 100)}%</span>{lane.renderStartedAt && <span className="render-timer">⏱ {formatElapsedTime(lane.renderStartedAt, lane.renderFinishedAt, clockNow)}</span>}</div><div className="render-status-actions">{lane.downloadUrl && <a href={lane.downloadUrl} download>Download {formatBytes(lane.outputSizeInBytes)}</a>}{activeRenderStages.has(lane.stage) && <button className="danger compact" disabled={busy[`stop-${job.id}-${code}`]} onClick={() => stopRenderLanguage(job, code)}>Dừng render</button>}</div></article>)}</section>)}</div>}</section>}
+      </main><footer><span>Prayer Studio</span><span>State & media lưu trên mounted volume</span></footer>
     </div>
-  );
+  </div>;
 };

@@ -30,13 +30,22 @@ const port = Number(process.env.APP_PORT || 4300);
 // local mặc định 127.0.0.1 cho an toàn. Đặt APP_HOST để ghi đè.
 const host =
   process.env.APP_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
-const uploadRoot = path.join(PROJECT_ROOT, 'workspace', 'uploads');
+const uploadRoot = path.resolve(process.env.UPLOAD_ROOT || path.join(PROJECT_ROOT, 'workspace', 'uploads'));
 mkdirSync(uploadRoot, {recursive: true});
 startUploadCleanup({
   uploadRoot,
   retentionHours: Number(process.env.UPLOAD_RETENTION_HOURS || 24),
   intervalHours: Number(process.env.UPLOAD_CLEANUP_INTERVAL_HOURS || 1),
 });
+const completedVideoRoot = process.env.COMPLETED_VIDEO_ROOT?.trim();
+if (completedVideoRoot) {
+  mkdirSync(completedVideoRoot, {recursive: true});
+  startUploadCleanup({
+    uploadRoot: completedVideoRoot,
+    retentionHours: Number(process.env.COMPLETED_VIDEO_RETENTION_HOURS || 168),
+    intervalHours: Number(process.env.UPLOAD_CLEANUP_INTERVAL_HOURS || 168),
+  });
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -416,6 +425,18 @@ app.get('/api/batch/render/:jobId/:language/download', async (request, response,
       response.status(404).json({error: 'Video render không tồn tại hoặc chưa hoàn tất.'});
       return;
     }
+    if (language.localOutputPath) {
+      try {
+        response.attachment(`${request.params.language}-prayer.mp4`);
+        await streamPipeline(
+          (await import('node:fs')).createReadStream(language.localOutputPath),
+          response,
+        );
+        return;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
     const config = batchRenderer.batchConfig();
     const object = await awsStorage.getObject({
       bucketName: config.bucketName,
@@ -429,6 +450,14 @@ app.get('/api/batch/render/:jobId/:language/download', async (request, response,
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/api/workflows/current', (_request, response) => {
+  response.json(jobs.listJobs({type: 'prayer-workflow'})[0] || null);
+});
+
+app.get('/api/render-jobs', (_request, response) => {
+  response.json(jobs.listJobs({type: 'aws-batch-ffmpeg-render'}));
 });
 
 app.post('/api/generate', (request, response, next) => {

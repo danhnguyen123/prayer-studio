@@ -41,8 +41,12 @@ và mount vào `/mnt/media` để tách khỏi ổ boot, cấu trúc:
 /mnt/media/
 ├── video/          # footage .mp4/.mov/.webm
 ├── image/          # ảnh tĩnh .jpg/.png/.webp
-└── music/
-    └── intro.MP3   # nhạc nền intro
+├── music/
+│   └── intro.MP3   # nhạc nền intro
+└── prayer-studio/  # dữ liệu ghi của ứng dụng, nằm ngoài Root disk
+    ├── uploads/    # MP3/SRT voiceover
+    ├── completed/  # MP4 đã tải từ S3 về sau khi render
+    └── state/      # trạng thái workflow/render để giữ khi đóng trình duyệt
 ```
 
 Upload từ máy bạn (rsync giữ được tiến độ, chỉ đẩy file mới):
@@ -55,7 +59,8 @@ rsync -avz --progress "D:/Materials/Music/intro.MP3" deploy@<server>:/mnt/media/
 
 > Windows: dùng `scp -r` hoặc WinSCP/FileZilla nếu chưa có rsync.
 
-`docker-compose.yml` đã mount `/mnt/media:/media:ro` (chỉ đọc). Trong `.env` trỏ:
+`docker-compose.yml` mount riêng `video/image/music` chỉ đọc và
+`/mnt/media/prayer-studio` có quyền ghi. Trong `.env` trỏ:
 
 ```dotenv
 DEFAULT_VIDEO_DIR=/media/video
@@ -120,7 +125,9 @@ Chạy:
 ```bash
 ssh deploy@<server>
 cd /opt/prayer-studio
-mkdir -p data/renders data/output data/logs data/workspace
+mkdir -p data/output data/logs
+sudo mkdir -p /mnt/media/prayer-studio/{uploads,completed,state}
+sudo chown -R "$(id -u):$(id -g)" /mnt/media/prayer-studio
 docker compose up -d --build
 docker compose logs -f
 ```

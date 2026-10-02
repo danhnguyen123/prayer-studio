@@ -14,13 +14,14 @@ services:
     ports:
       - "4300:4300"
     volumes:
-      # Thư viện media (footage/ảnh/nhạc) — chỉ đọc. Xem .env để trỏ đúng đường dẫn.
-      - /mnt/media:/media:ro
+      # Media nguồn chỉ đọc; dữ liệu Prayer Studio ghi vào volume riêng.
+      - /mnt/media/video:/media/video:ro
+      - /mnt/media/image:/media/image:ro
+      - /mnt/media/music:/media/music:ro
+      - /mnt/media/prayer-studio:/media/prayer-studio
       # Dữ liệu runtime bền + dễ dọn (nằm trên host, không phình lớp ghi của container)
-      - ./data/renders:/app/renders
       - ./data/output:/app/output
       - ./data/logs:/app/logs
-      - ./data/workspace:/app/workspace
     logging:
       driver: json-file
       options:

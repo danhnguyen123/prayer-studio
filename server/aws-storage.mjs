@@ -1,6 +1,7 @@
 import {createReadStream} from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {pipeline} from 'node:stream/promises';
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -107,3 +108,18 @@ export const getObject = async ({bucketName, objectKey, region}) =>
   getS3Client(region).send(
     new GetObjectCommand({Bucket: bucketName, Key: objectKey}),
   );
+
+export const downloadObject = async ({bucketName, objectKey, region, destination}) => {
+  await fs.mkdir(path.dirname(destination), {recursive: true});
+  const temporary = `${destination}.part`;
+  const object = await getObject({bucketName, objectKey, region});
+  try {
+    const {createWriteStream} = await import('node:fs');
+    await pipeline(object.Body, createWriteStream(temporary));
+    await fs.rename(temporary, destination);
+  } catch (error) {
+    await fs.rm(temporary, {force: true}).catch(() => undefined);
+    throw error;
+  }
+  return destination;
+};

@@ -19,6 +19,39 @@ button:disabled { cursor: not-allowed; opacity: .48; }
     radial-gradient(circle at 95% 12%, rgba(48, 106, 87, .18), transparent 29%),
     #0a100f;
 }
+.app-layout { min-height: 100vh; padding-left: 248px; background: #0a100f; transition: padding-left .2s ease; }
+.app-layout.sidebar-collapsed { padding-left: 82px; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; width: 248px; flex-direction: column; border-right: 1px solid rgba(255,255,255,.08); background: #0c1512; padding: 28px 18px 20px; transition: width .2s ease; }
+.sidebar-collapsed .sidebar { width: 82px; padding-inline: 12px; }
+.sidebar-brand { display: flex; gap: 13px; align-items: center; min-height: 68px; }
+.sidebar-brand .brand-mark { width: 46px; min-width: 46px; height: 54px; }
+.sidebar-brand .brand-mark span:first-child { left: 20px; top: 11px; height: 31px; }
+.sidebar-brand .brand-mark span:last-child { left: 13px; top: 22px; width: 21px; }
+.sidebar-brand strong, .sidebar-brand small { display: block; white-space: nowrap; }
+.sidebar-brand strong { color: #f0eadc; font: 18px Georgia, serif; }
+.sidebar-brand small { margin-top: 5px; color: #5f7068; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; }
+.sidebar nav { display: grid; gap: 8px; margin-top: 38px; }
+.sidebar nav button { display: flex; gap: 13px; align-items: center; width: 100%; color: #76867f; background: transparent; text-align: left; }
+.sidebar nav button b { display: grid; width: 30px; min-width: 30px; height: 30px; place-items: center; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; font-size: 10px; }
+.sidebar nav button.active { color: #e6d19e; background: rgba(205,177,107,.09); }
+.sidebar nav button.active b { border-color: rgba(205,177,107,.35); }
+.sidebar-toggle { margin-top: auto; color: #829088; border: 1px solid rgba(255,255,255,.08); background: transparent; }
+.app-content { min-width: 0; }
+.topbar { display: flex; width: min(1380px, calc(100% - 56px)); justify-content: space-between; gap: 20px; align-items: center; margin-inline: auto; padding: 38px 0 26px; }
+.topbar h1 { margin: 0; color: #f5f1e7; font: 500 clamp(34px,4vw,52px)/1 Georgia,serif; }
+.empty-state { display: grid; min-height: 180px; place-items: center; align-content: center; gap: 16px; padding: 30px; color: #718078; }
+.render-job-list { display: grid; gap: 18px; margin-top: 20px; }
+.render-job-group { border: 1px solid rgba(255,255,255,.07); border-radius: 13px; background: rgba(5,11,9,.35); padding: 14px; }
+.render-job-heading, .render-queue-item { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.render-job-heading { margin-bottom: 9px; padding: 2px 4px 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.render-job-heading strong, .render-job-heading small, .render-queue-item strong, .render-queue-item span { display: block; }
+.render-job-heading strong { color: #b8c4bd; font-size: 11px; }
+.render-job-heading small { margin-top: 3px; color: #596861; font-size: 9px; }
+.render-queue-item { margin-top: 8px; border-radius: 10px; background: rgba(255,255,255,.025); padding: 12px; }
+.render-queue-item strong { color: #dce3df; font-size: 13px; }
+.render-queue-item span { margin-top: 4px; color: #708078; font-size: 10px; }
+.render-queue-item.completed { background: rgba(82,137,105,.09); }
+.render-queue-item.failed, .render-queue-item.cancelled { background: rgba(126,48,34,.1); }
 
 .hero, main, footer, .alert { width: min(1380px, calc(100% - 56px)); margin-inline: auto; }
 .hero { display: grid; grid-template-columns: 66px 1fr auto; gap: 24px; align-items: center; padding: 58px 0 36px; }
@@ -181,6 +214,13 @@ footer { display: flex; justify-content: space-between; padding: 0 0 30px; color
 }
 
 @media (max-width: 620px) {
+  .app-layout, .app-layout.sidebar-collapsed { padding-left: 0; padding-bottom: 72px; }
+  .sidebar, .sidebar-collapsed .sidebar { inset: auto 0 0 0; width: auto; height: 64px; flex-direction: row; align-items: center; padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.08); border-right: 0; }
+  .sidebar-brand, .sidebar-toggle { display: none; }
+  .sidebar nav { grid-template-columns: repeat(3,1fr); width: 100%; margin: 0; }
+  .sidebar nav button { justify-content: center; padding: 8px 4px; }
+  .sidebar nav button b { display: none; }
+  .topbar { width: min(100% - 24px,1380px); padding-top: 24px; }
   .hero, main, footer, .alert { width: min(100% - 24px, 1380px); }
   .hero { padding-top: 32px; }
   .brand-mark { display: none; }
