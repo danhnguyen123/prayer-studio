@@ -19,11 +19,11 @@ test('FFmpeg worker shifts voice captions after intro and fades verse', () => {
   assert.match(ass, /,1,3\.5,0\.7,5,/);
 });
 
-test('FFmpeg image zoom renders on a 2x canvas before stable downscaling and has no lower overlay', async () => {
+test('FFmpeg image zoom renders directly at Full HD with even crop coordinates and no lower overlay', async () => {
   const worker = await fs.readFile(new URL('../worker/ffmpeg-worker.mjs', import.meta.url), 'utf8');
-  assert.match(worker, /zoomSourceWidth = plan\.width \* 2/);
+  assert.match(worker, /scale=\$\{plan\.width\}:\$\{plan\.height\}:force_original_aspect_ratio=increase:flags=lanczos/);
   assert.match(worker, /trunc\(\(iw-iw\/zoom\)\/4\)\*2/);
-  assert.match(worker, /s=\$\{zoomSourceWidth\}x\$\{zoomSourceHeight\}:fps=/);
-  assert.match(worker, /flags=lanczos\+accurate_rnd/);
+  assert.match(worker, /s=\$\{plan\.width\}x\$\{plan\.height\}:fps=/);
+  assert.doesNotMatch(worker, /zoomSourceWidth|lanczos\+accurate_rnd/);
   assert.doesNotMatch(worker, /drawbox=x=0:y=ih\*0\.48/);
 });

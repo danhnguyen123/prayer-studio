@@ -113,14 +113,10 @@ const runFfmpeg = async ({filesByKey, outputPath, assPath}) => {
     const normalize = `scale=${plan.width}:${plan.height}:force_original_aspect_ratio=increase,crop=${plan.width}:${plan.height},setsar=1,fps=${plan.fps},format=yuv420p`;
     if (clip.type === 'image') {
       const frames = Math.max(1, clip.durationInFrames);
-      // Tạo chuyển động thật sự trên canvas 2x, khóa tọa độ về pixel chẵn,
-      // sau đó downscale một lần về 1080p. Chỉ upscale nguồn nhưng để
-      // zoompan xuất thẳng 1080p vẫn làm pha lấy mẫu nhảy qua lại giữa
-      // các pixel; supersampling giữ pha chuyển động ổn định trước khi thu nhỏ.
-      const zoomSourceWidth = plan.width * 2;
-      const zoomSourceHeight = plan.height * 2;
+      // Toàn bộ keyframe ảnh chạy trực tiếp ở độ phân giải output Full HD.
+      // Khóa tọa độ crop về pixel chẵn để phù hợp yuv420p.
       filters.push(
-        `[${index}:v]scale=${zoomSourceWidth}:${zoomSourceHeight}:force_original_aspect_ratio=increase:flags=lanczos,crop=${zoomSourceWidth}:${zoomSourceHeight},setsar=1,format=yuv444p,zoompan=z='1.01+0.085*on/${Math.max(1, frames - 1)}':x='trunc((iw-iw/zoom)/4)*2':y='trunc((ih-ih/zoom)/4)*2':d=${frames}:s=${zoomSourceWidth}x${zoomSourceHeight}:fps=${plan.fps},scale=${plan.width}:${plan.height}:flags=lanczos+accurate_rnd,format=yuv420p,trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`,
+        `[${index}:v]scale=${plan.width}:${plan.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${plan.width}:${plan.height},setsar=1,format=yuv420p,zoompan=z='1.01+0.085*on/${Math.max(1, frames - 1)}':x='trunc((iw-iw/zoom)/4)*2':y='trunc((ih-ih/zoom)/4)*2':d=${frames}:s=${plan.width}x${plan.height}:fps=${plan.fps},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`,
       );
     } else {
       filters.push(`[${index}:v]${normalize},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`);
