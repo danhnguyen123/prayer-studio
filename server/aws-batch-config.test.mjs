@@ -12,7 +12,8 @@ test('AWS Batch stack enforces one 8-vCPU ARM Spot worker', async () => {
   assert.match(template, /Type: SPOT/);
   assert.match(template, /MaxvCpus: 8/);
   assert.match(template, /Vcpus: 8/);
-  assert.match(template, /ECS_AL2023_ARM64/);
+  assert.match(template, /ImageType:\s+ECS_AL2023\b/);
+  assert.doesNotMatch(template, /ECS_AL2023_ARM64/);
   assert.match(template, /SPOT_PRICE_CAPACITY_OPTIMIZED/);
 });
 

@@ -137,7 +137,10 @@ Resources:
         Subnets: !Ref SubnetIds
         SecurityGroupIds: [!Ref RenderSecurityGroup]
         Ec2Configuration:
-          - ImageType: ECS_AL2023_ARM64
+          # AWS Batch uses ECS_AL2023 for both x86_64 and ARM64. Because every
+          # instance type above is Graviton, Batch automatically selects the
+          # ARM64 variant of the ECS-optimized AL2023 AMI.
+          - ImageType: ECS_AL2023
       Tags:
         application: prayer-studio
 
