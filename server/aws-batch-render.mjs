@@ -251,14 +251,15 @@ const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
   }
 };
 
-export const runSequentialBatchRenderJob = async ({jobId, workflowId, languages, options, baseUrl}) => {
-  updateJob(jobId, {status: 'running', message: `AWS Batch một worker: 0/${languages.length} video`});
+export const runParallelBatchRenderJob = async ({jobId, workflowId, languages, options, baseUrl}) => {
+  const maxParallelWorkers = 5;
+  updateJob(jobId, {status: 'running', message: `AWS Batch tối đa ${maxParallelWorkers} worker: 0/${languages.length} video`});
   let completed = 0;
-  for (const code of languages) {
+  await mapWithConcurrency(languages, maxParallelWorkers, async (code) => {
     try {
       await renderLanguage({jobId, workflowId, code, options, baseUrl});
       completed += 1;
-      updateJob(jobId, {message: `AWS Batch một worker: ${completed}/${languages.length} video`});
+      updateJob(jobId, {message: `AWS Batch tối đa ${maxParallelWorkers} worker: ${completed}/${languages.length} video`});
     } catch (error) {
       appendJobLog(jobId, `[${code}] ${error.stack || error.message}`);
       const current = getJob(jobId)?.languages?.[code];
@@ -270,11 +271,11 @@ export const runSequentialBatchRenderJob = async ({jobId, workflowId, languages,
         ...(current?.renderStartedAt ? {renderFinishedAt: new Date().toISOString()} : {}),
       });
     }
-  }
+  });
   updateJob(jobId, {
     status: completed === languages.length ? 'completed' : completed ? 'completed' : 'failed',
     progress: 1,
-    message: `Hoàn tất ${completed}/${languages.length} video bằng AWS Batch`,
+    message: `Hoàn tất ${completed}/${languages.length} video bằng tối đa ${maxParallelWorkers} AWS Batch worker`,
     ...(completed ? {} : {error: 'Tất cả AWS Batch render đều thất bại.'}),
   });
 };

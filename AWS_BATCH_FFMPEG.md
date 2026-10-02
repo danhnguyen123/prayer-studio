@@ -1,9 +1,9 @@
-# AWS Batch FFmpeg — một EC2 Spot worker
+# AWS Batch FFmpeg — tối đa 5 EC2 Spot worker
 
 Branch này giữ Remotion Player để preview, nhưng render production bằng FFmpeg trên
-AWS Batch. Compute environment có `maxvCpus: 8`, mỗi job yêu cầu 8 vCPU, do đó chỉ
-có tối đa **một** EC2 Spot worker chạy tại một thời điểm. Nếu chọn nhiều ngôn ngữ,
-backend submit lần lượt: video sau chỉ bắt đầu khi video trước hoàn tất.
+AWS Batch. Compute environment có `maxvCpus: 20`, mỗi job yêu cầu 4 vCPU, do đó có
+tối đa **năm** EC2 Spot worker ARM chạy tại một thời điểm. Năm ngôn ngữ được submit
+song song; nếu sau này có nhiều hơn năm, backend giữ giới hạn đồng thời ở năm job.
 
 ## 1. Điều kiện
 
@@ -34,7 +34,7 @@ Script tạo:
 - video cuối trong `batch-renders/` được giữ lại cho đến khi bạn chủ động xóa;
 - ECR repository giữ tối đa 5 worker image;
 - AWS Batch Spot compute environment ARM;
-- giới hạn 8 vCPU = tối đa một `c7g.2xlarge` hoặc `c6g.2xlarge`;
+- giới hạn 20 vCPU = tối đa năm `c7g.xlarge` hoặc `c6g.xlarge`, mỗi máy 4 vCPU/8 GB;
 - job queue, job definition, IAM least-privilege và CloudWatch log group;
 - build/push `Dockerfile.batch` lên ECR.
 
@@ -67,7 +67,7 @@ job definition. Worker không nhận key từ Oracle: nó dùng `WorkerJobRole` 
 
 1. Upload MP3 + SRT và kiểm tra Preview Remotion.
 2. Bấm `Render FFmpeg · 1 worker`.
-3. Backend tạo media plan, cache footage/ảnh/audio trên S3 và submit Batch job.
+3. Backend tạo media plan, cache footage/ảnh/audio trên S3 và submit tối đa 5 Batch job song song.
 4. EC2 Spot tải đúng media cần dùng, encode H.264/AAC, burn ASS subtitles, xóa
    metadata và upload MP4 cuối lên S3.
 5. UI trả signed URL 7 ngày.
@@ -89,5 +89,6 @@ aws logs tail /aws/batch/prayer-studio-ffmpeg --region ap-southeast-1 --follow
 ```
 
 Nếu job đứng ở `RUNNABLE`, thường là thiếu Spot capacity, subnet không ra Internet,
-EC2 Spot quota bằng 0 hoặc instance role chưa đúng. Template cho phép cả c7g và c6g
-để tăng khả năng có capacity.
+EC2 Spot quota dưới 20 vCPU hoặc instance role chưa đúng. Template cho phép cả c7g
+và c6g để tăng khả năng có capacity. Để đủ cả 5 worker đồng thời, yêu cầu quota
+`All Standard Spot Instance Requests` ít nhất 20 vCPU tại region Singapore.

@@ -466,7 +466,7 @@ app.post('/api/batch/render', (request, response, next) => {
     const languageStates = Object.fromEntries(
       selectedLanguages.map((code) => [
         code,
-        {code, stage: 'queued', progress: 0, message: 'Đang chờ AWS Batch một worker'},
+        {code, stage: 'queued', progress: 0, message: 'Đang chờ AWS Batch worker 4 vCPU'},
       ]),
     );
     const job = jobs.createJob('aws-batch-ffmpeg-render', {
@@ -475,7 +475,7 @@ app.post('/api/batch/render', (request, response, next) => {
       selectedLanguages,
     });
     const options = {...DEFAULT_PATHS, ...request.body};
-    batchRenderer.runSequentialBatchRenderJob({
+    batchRenderer.runParallelBatchRenderJob({
       jobId: job.id,
       workflowId: workflow.id,
       languages: selectedLanguages,

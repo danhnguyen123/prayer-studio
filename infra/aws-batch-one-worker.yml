@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Prayer Studio - one ARM Spot worker for FFmpeg rendering
+Description: Prayer Studio - up to five 4-vCPU ARM Spot workers for FFmpeg rendering
 
 Parameters:
   VpcId:
@@ -129,9 +129,9 @@ Resources:
         AllocationStrategy: SPOT_PRICE_CAPACITY_OPTIMIZED
         MinvCpus: 0
         DesiredvCpus: 0
-        MaxvCpus: 8
+        MaxvCpus: 20
         BidPercentage: 100
-        InstanceTypes: [c7g.2xlarge, c6g.2xlarge]
+        InstanceTypes: [c7g.xlarge, c6g.xlarge]
         InstanceRole: !GetAtt BatchInstanceProfile.Arn
         SpotIamFleetRole: !GetAtt SpotFleetRole.Arn
         Subnets: !Ref SubnetIds
@@ -165,8 +165,8 @@ Resources:
         AttemptDurationSeconds: 7200
       ContainerProperties:
         Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${WorkerRepository}:${WorkerImageTag}'
-        Vcpus: 8
-        Memory: 15000
+        Vcpus: 4
+        Memory: 7500
         JobRoleArn: !GetAtt WorkerJobRole.Arn
         ExecutionRoleArn: !GetAtt WorkerExecutionRole.Arn
         Privileged: false

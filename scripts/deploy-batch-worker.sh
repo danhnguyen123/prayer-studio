@@ -42,4 +42,6 @@ AWS_BATCH_JOB_DEFINITION=$(output JobDefinitionArn)
 Sau đó chạy:
   cd /opt/prayer-studio
   docker compose up -d --force-recreate
+
+Lưu ý: cần EC2 Standard Spot quota >= 20 vCPU để chạy đủ 5 worker cùng lúc.
 EOF
