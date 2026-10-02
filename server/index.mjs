@@ -380,6 +380,26 @@ app.post('/api/batch/render', (request, response, next) => {
   }
 });
 
+app.post('/api/batch/render/:jobId/:language/stop', async (request, response, next) => {
+  try {
+    const job = await batchRenderer.stopBatchRenderLanguage({
+      jobId: request.params.jobId,
+      code: request.params.language,
+    });
+    response.json(job);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/batch/render/:jobId/stop', async (request, response, next) => {
+  try {
+    response.json(await batchRenderer.stopAllBatchRenders(request.params.jobId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/generate', (request, response, next) => {
   try {
     const selectedLanguages = validateLanguages(request.body?.languages);

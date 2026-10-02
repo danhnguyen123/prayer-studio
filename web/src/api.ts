@@ -26,7 +26,7 @@ export const waitForJob = async (
   while (true) {
     const job = await api<Job>(`/api/jobs/${jobId}`);
     onUpdate(job);
-    if (job.status === 'completed') return job;
+    if (job.status === 'completed' || job.status === 'cancelled') return job;
     if (job.status === 'failed') throw new Error(job.error || job.message);
     await new Promise((resolve) => window.setTimeout(resolve, 1500));
   }
@@ -35,7 +35,7 @@ export const waitForJob = async (
 export type Job = {
   id: string;
   type: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   error?: string;
@@ -77,4 +77,5 @@ export type LanguageJobState = {
   batchJobId?: string;
   renderStartedAt?: string;
   renderFinishedAt?: string;
+  cancelRequested?: boolean;
 };

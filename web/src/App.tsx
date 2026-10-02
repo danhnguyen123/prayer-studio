@@ -31,8 +31,13 @@ const stageLabels: Record<string, string> = {
   'script-ready': 'Kịch bản sẵn sàng', planning: 'Đang tạo timeline',
   'uploading-media': 'Đang tải media lên S3',
   'starting-batch': 'Đang khởi chạy Batch', 'batch-queued': 'Đang chờ EC2 Spot',
-  rendering: 'FFmpeg đang render', completed: 'Video sẵn sàng', failed: 'Có lỗi',
+  rendering: 'FFmpeg đang render', stopping: 'Đang dừng', cancelled: 'Đã dừng',
+  completed: 'Video sẵn sàng', failed: 'Có lỗi',
 };
+
+const activeRenderStages = new Set([
+  'queued', 'planning', 'uploading-media', 'starting-batch', 'batch-queued', 'rendering', 'stopping',
+]);
 
 // Seed ngẫu nhiên để thứ tự video/ảnh khác nhau mỗi lần render.
 const randomSeed = () => Math.random().toString(36).slice(2, 10);
@@ -173,6 +178,24 @@ export const App = () => {
     finally { setActionBusy('render', false); }
   };
 
+  const stopRenderLanguage = async (code: string) => {
+    if (!renderJob) return;
+    setError(''); setActionBusy(`stop-${code}`, true);
+    try {
+      setRenderJob(await api<Job>(`/api/batch/render/${renderJob.id}/${code}/stop`, {method: 'POST'}));
+    } catch (nextError) { setError((nextError as Error).message); }
+    finally { setActionBusy(`stop-${code}`, false); }
+  };
+
+  const stopAllRenders = async () => {
+    if (!renderJob) return;
+    setError(''); setActionBusy('stop-all', true);
+    try {
+      setRenderJob(await api<Job>(`/api/batch/render/${renderJob.id}/stop`, {method: 'POST'}));
+    } catch (nextError) { setError((nextError as Error).message); }
+    finally { setActionBusy('stop-all', false); }
+  };
+
   const renderableLanguages = workflowLanguages.filter((code) => workflow?.languages?.[code]?.assets);
   const workflowActive = workflow && workflow.status !== 'completed';
 
@@ -299,7 +322,7 @@ export const App = () => {
                           </div>
                         </div>
                       )}
-                      {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span>{renderLane.renderStartedAt && <span className="render-timer">⏱ FFmpeg: {formatElapsedTime(renderLane.renderStartedAt, renderLane.renderFinishedAt, clockNow)}</span>}</div>{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}</div>}
+                      {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span>{renderLane.renderStartedAt && <span className="render-timer">⏱ FFmpeg: {formatElapsedTime(renderLane.renderStartedAt, renderLane.renderFinishedAt, clockNow)}</span>}</div><div className="render-status-actions">{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}{activeRenderStages.has(renderLane.stage) && <button className="danger compact" disabled={busy[`stop-${code}`] || renderLane.stage === 'stopping'} onClick={() => stopRenderLanguage(code)}>{busy[`stop-${code}`] || renderLane.stage === 'stopping' ? 'Đang dừng…' : 'Dừng render'}</button>}</div></div>}
                     </article>
                   );
                 })}
@@ -319,7 +342,7 @@ export const App = () => {
                 <label><span>File nhạc nền</span><input value={mediaOptions.musicPath} onChange={(event) => setMediaOptions({...mediaOptions, musicPath: event.target.value})} placeholder="Để trống = tắt nhạc nền" /></label>
                 <label><span>Âm lượng nhạc intro (tắt khi voiceover)</span><input type="number" min="0" max="1" step="0.05" value={mediaOptions.musicIntroVolume} onChange={(event) => setMediaOptions({...mediaOptions, musicIntroVolume: Number(event.target.value)})} /></label>
               </div>
-              <div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ đã có MP3/SRT</strong><span>{status?.batchConfigured ? 'Sẵn sàng render đồng thời trên tối đa 5 worker · 4 vCPU/worker' : 'Thêm cấu hình AWS Batch trong .env để render'}</span></div><button className="primary" disabled={!status?.batchConfigured || renderableLanguages.length === 0 || busy.render} onClick={() => renderLanguages(renderableLanguages)}>{busy.render ? 'AWS Batch đang render…' : `Render đồng thời ${renderableLanguages.length || ''} video`}</button></div>
+              <div className="parallel-render-bar"><div><strong>{renderableLanguages.length} ngôn ngữ đã có MP3/SRT</strong><span>{status?.batchConfigured ? 'Sẵn sàng render đồng thời trên tối đa 5 worker · 4 vCPU/worker' : 'Thêm cấu hình AWS Batch trong .env để render'}</span></div><div className="parallel-actions"><button className="primary" disabled={!status?.batchConfigured || renderableLanguages.length === 0 || busy.render} onClick={() => renderLanguages(renderableLanguages)}>{busy.render ? 'AWS Batch đang render…' : `Render đồng thời ${renderableLanguages.length || ''} video`}</button>{renderJob && Object.values(renderJob.languages || {}).some((language) => activeRenderStages.has(language.stage)) && <button className="danger" disabled={busy['stop-all']} onClick={stopAllRenders}>{busy['stop-all'] ? 'Đang dừng…' : 'Dừng tất cả & giải phóng EC2'}</button>}</div></div>
             </section>
           </>
         )}

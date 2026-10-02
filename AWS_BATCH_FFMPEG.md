@@ -54,6 +54,8 @@ AWS key mà web backend dùng cần các action:
 ```text
 batch:SubmitJob
 batch:DescribeJobs
+batch:CancelJob
+batch:TerminateJob
 batch:TagResource
 s3:GetObject
 s3:PutObject
@@ -71,6 +73,10 @@ job definition. Worker không nhận key từ Oracle: nó dùng `WorkerJobRole` 
 4. EC2 Spot tải đúng media cần dùng, encode H.264/AAC, burn ASS subtitles, xóa
    metadata và upload MP4 cuối lên S3.
 5. UI trả signed URL 7 ngày.
+
+Các nút **Dừng render** và **Dừng tất cả & giải phóng EC2** hủy job
+trong queue hoặc terminate job đang chạy. Khi không còn job, compute environment có
+`MinvCpus: 0` sẽ tự scale về 0; không terminate EC2 thủ công.
 
 Giá trị mặc định:
 

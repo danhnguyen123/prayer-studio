@@ -1,5 +1,11 @@
 import path from 'node:path';
-import {BatchClient, DescribeJobsCommand, SubmitJobCommand} from '@aws-sdk/client-batch';
+import {
+  BatchClient,
+  CancelJobCommand,
+  DescribeJobsCommand,
+  SubmitJobCommand,
+  TerminateJobCommand,
+} from '@aws-sdk/client-batch';
 import {buildMediaPlan} from './media-plan.mjs';
 import {appendJobLog, getJob, mutateJob, updateJob} from './job-store.mjs';
 import {
@@ -12,6 +18,14 @@ import {
 } from './aws-storage.mjs';
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const TERMINAL_STAGES = new Set(['completed', 'failed', 'cancelled']);
+
+class RenderCancelledError extends Error {
+  constructor(code) {
+    super(`${code}: đã dừng render theo yêu cầu.`);
+    this.name = 'RenderCancelledError';
+  }
+}
 
 const mapWithConcurrency = async (items, concurrency, mapper) => {
   const results = new Array(items.length);
@@ -51,6 +65,57 @@ const setLanguage = (jobId, code, patch) => {
     const values = Object.values(job.languages);
     job.progress = values.reduce((sum, item) => sum + (item.progress || 0), 0) / values.length;
   });
+};
+
+const isStopRequested = (jobId, code) => Boolean(getJob(jobId)?.languages?.[code]?.cancelRequested);
+
+const throwIfStopRequested = (jobId, code) => {
+  if (isStopRequested(jobId, code)) throw new RenderCancelledError(code);
+};
+
+const stopRemoteBatchJob = async ({client, batchJobId, code}) => {
+  const described = await client.send(new DescribeJobsCommand({jobs: [batchJobId]}));
+  const status = described.jobs?.[0]?.status;
+  if (!status || ['SUCCEEDED', 'FAILED'].includes(status)) return status;
+  const reason = `Prayer Studio: stop ${code}`;
+  if (['SUBMITTED', 'PENDING', 'RUNNABLE'].includes(status)) {
+    await client.send(new CancelJobCommand({jobId: batchJobId, reason}));
+  } else {
+    await client.send(new TerminateJobCommand({jobId: batchJobId, reason}));
+  }
+  return status;
+};
+
+export const stopBatchRenderLanguage = async ({jobId, code}) => {
+  const job = getJob(jobId);
+  const language = job?.languages?.[code];
+  if (!job || job.type !== 'aws-batch-ffmpeg-render' || !language) {
+    throw new Error('Job render hoặc ngôn ngữ không tồn tại.');
+  }
+  if (TERMINAL_STAGES.has(language.stage)) return job;
+
+  setLanguage(jobId, code, {
+    cancelRequested: true,
+    stage: 'stopping',
+    message: 'Đang dừng AWS Batch worker',
+  });
+  if (language.batchJobId) {
+    const config = batchConfig();
+    const client = new BatchClient({region: config.region, credentials: awsCredentials()});
+    await stopRemoteBatchJob({client, batchJobId: language.batchJobId, code});
+  }
+  appendJobLog(jobId, `[${code}] Đã yêu cầu dừng render.`);
+  return getJob(jobId);
+};
+
+export const stopAllBatchRenders = async (jobId) => {
+  const job = getJob(jobId);
+  if (!job || job.type !== 'aws-batch-ffmpeg-render') throw new Error('Job render không tồn tại.');
+  const activeCodes = Object.entries(job.languages || {})
+    .filter(([, language]) => !TERMINAL_STAGES.has(language.stage))
+    .map(([code]) => code);
+  await Promise.all(activeCodes.map((code) => stopBatchRenderLanguage({jobId, code})));
+  return getJob(jobId);
 };
 
 const uploadPlanMedia = async ({plan, audioPath, config, onProgress}) => {
@@ -129,6 +194,7 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
   }
   const client = new BatchClient({region: config.region, credentials: awsCredentials()});
 
+  throwIfStopRequested(jobId, code);
   setLanguage(jobId, code, {stage: 'planning', progress: 0.02, message: 'Đang tạo timeline FFmpeg'});
   const plan = await buildMediaPlan({
     ...options,
@@ -137,6 +203,7 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
     seed: `${options.seed || 'prayer-studio'}-${code}`,
     introText: options.introTexts?.[code] ?? options.introText ?? '',
   });
+  throwIfStopRequested(jobId, code);
 
   setLanguage(jobId, code, {
     stage: 'uploading-media',
@@ -152,6 +219,7 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
       message: `Đang đồng bộ media ${Math.round(value * 100)}%`,
     }),
   });
+  throwIfStopRequested(jobId, code);
 
   const stamp = Date.now();
   const prefix = `batch-jobs/${workflowId}/${code}/${stamp}`;
@@ -172,6 +240,7 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
     }),
   });
 
+  throwIfStopRequested(jobId, code);
   setLanguage(jobId, code, {stage: 'starting-batch', progress: 0.21, message: 'Đang khởi chạy AWS Batch Spot worker'});
   const submitted = await client.send(new SubmitJobCommand({
     jobName: `prayer-${code}-${stamp}`.slice(0, 128),
@@ -196,8 +265,13 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
     message: 'AWS Batch đang cấp EC2 Spot',
     batchJobId: submitted.jobId,
   });
+  if (isStopRequested(jobId, code)) {
+    await stopRemoteBatchJob({client, batchJobId: submitted.jobId, code});
+    throw new RenderCancelledError(code);
+  }
 
   while (true) {
+    if (isStopRequested(jobId, code)) throw new RenderCancelledError(code);
     const described = await client.send(new DescribeJobsCommand({jobs: [submitted.jobId]}));
     const remote = described.jobs?.[0];
     if (!remote) throw new Error(`Không đọc được AWS Batch job ${submitted.jobId}.`);
@@ -253,6 +327,8 @@ export const runParallelBatchRenderJob = async ({jobId, workflowId, languages, o
   const maxParallelWorkers = 5;
   updateJob(jobId, {status: 'running', message: `AWS Batch tối đa ${maxParallelWorkers} worker: 0/${languages.length} video`});
   let completed = 0;
+  let cancelled = 0;
+  let failed = 0;
   await mapWithConcurrency(languages, maxParallelWorkers, async (code) => {
     try {
       await renderLanguage({jobId, workflowId, code, options});
@@ -261,19 +337,23 @@ export const runParallelBatchRenderJob = async ({jobId, workflowId, languages, o
     } catch (error) {
       appendJobLog(jobId, `[${code}] ${error.stack || error.message}`);
       const current = getJob(jobId)?.languages?.[code];
+      const wasCancelled = error instanceof RenderCancelledError || current?.cancelRequested;
+      if (wasCancelled) cancelled += 1;
+      else failed += 1;
       setLanguage(jobId, code, {
-        stage: 'failed',
+        stage: wasCancelled ? 'cancelled' : 'failed',
         progress: 1,
-        message: error.message,
-        error: error.message,
-        ...(current?.renderStartedAt ? {renderFinishedAt: new Date().toISOString()} : {}),
+        message: wasCancelled ? 'Đã dừng render và giải phóng worker' : error.message,
+        ...(wasCancelled ? {} : {error: error.message}),
+        renderFinishedAt: new Date().toISOString(),
       });
     }
   });
+  const finalStatus = cancelled > 0 && failed === 0 ? 'cancelled' : completed > 0 ? 'completed' : 'failed';
   updateJob(jobId, {
-    status: completed === languages.length ? 'completed' : completed ? 'completed' : 'failed',
+    status: finalStatus,
     progress: 1,
-    message: `Hoàn tất ${completed}/${languages.length} video bằng tối đa ${maxParallelWorkers} AWS Batch worker`,
-    ...(completed ? {} : {error: 'Tất cả AWS Batch render đều thất bại.'}),
+    message: `Hoàn tất ${completed}, dừng ${cancelled}, lỗi ${failed}/${languages.length} video`,
+    ...(finalStatus === 'failed' ? {error: 'Tất cả AWS Batch render đều thất bại.'} : {}),
   });
 };
