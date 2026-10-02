@@ -1,7 +1,7 @@
 # AWS Batch FFmpeg — tối đa 5 EC2 Spot worker
 
-Branch này giữ Remotion Player để preview, nhưng render production bằng FFmpeg trên
-AWS Batch. Compute environment có `maxvCpus: 20`, mỗi job yêu cầu 4 vCPU, do đó có
+Branch này chỉ dùng FFmpeg trên AWS Batch để render video. Compute environment có
+`maxvCpus: 20`, mỗi job yêu cầu 4 vCPU, do đó có
 tối đa **năm** EC2 Spot worker ARM chạy tại một thời điểm. Năm ngôn ngữ được submit
 song song; nếu sau này có nhiều hơn năm, backend giữ giới hạn đồng thời ở năm job.
 
@@ -65,7 +65,7 @@ job definition. Worker không nhận key từ Oracle: nó dùng `WorkerJobRole` 
 
 ## 4. Render
 
-1. Upload MP3 + SRT và kiểm tra Preview Remotion.
+1. Upload MP3 + SRT cho từng ngôn ngữ.
 2. Bấm `Render FFmpeg · 1 worker`.
 3. Backend tạo media plan, cache footage/ảnh/audio trên S3 và submit tối đa 5 Batch job song song.
 4. EC2 Spot tải đúng media cần dùng, encode H.264/AAC, burn ASS subtitles, xóa

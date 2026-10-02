@@ -28,7 +28,7 @@ const mapWithConcurrency = async (items, concurrency, mapper) => {
 };
 
 export const batchConfig = () => {
-  const region = process.env.AWS_BATCH_REGION || process.env.REMOTION_AWS_REGION || 'ap-southeast-1';
+  const region = process.env.AWS_BATCH_REGION || process.env.AWS_REGION || 'ap-southeast-1';
   return {
     region,
     bucketName: process.env.AWS_BATCH_BUCKET?.trim(),
@@ -115,7 +115,7 @@ const readWorkerProgress = async ({config, statusKey}) => {
   }
 };
 
-const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
+const renderLanguage = async ({jobId, workflowId, code, options}) => {
   const workflow = getJob(workflowId);
   const language = workflow?.languages?.[code];
   if (!workflow || !language) throw new Error(`Không tìm thấy workflow ${workflowId}.`);
@@ -135,9 +135,7 @@ const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
     audioPath: language.assets.audioPath,
     srtPath: language.assets.srtPath,
     seed: `${options.seed || 'prayer-studio'}-${code}`,
-    previewSeconds: null,
     introText: options.introTexts?.[code] ?? options.introText ?? '',
-    baseUrl,
   });
 
   setLanguage(jobId, code, {
@@ -251,13 +249,13 @@ const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
   }
 };
 
-export const runParallelBatchRenderJob = async ({jobId, workflowId, languages, options, baseUrl}) => {
+export const runParallelBatchRenderJob = async ({jobId, workflowId, languages, options}) => {
   const maxParallelWorkers = 5;
   updateJob(jobId, {status: 'running', message: `AWS Batch tối đa ${maxParallelWorkers} worker: 0/${languages.length} video`});
   let completed = 0;
   await mapWithConcurrency(languages, maxParallelWorkers, async (code) => {
     try {
-      await renderLanguage({jobId, workflowId, code, options, baseUrl});
+      await renderLanguage({jobId, workflowId, code, options});
       completed += 1;
       updateJob(jobId, {message: `AWS Batch tối đa ${maxParallelWorkers} worker: ${completed}/${languages.length} video`});
     } catch (error) {

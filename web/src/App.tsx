@@ -1,7 +1,4 @@
 import {useEffect, useMemo, useState} from 'react';
-import {Player} from '@remotion/player';
-import {PrayerVideo} from '../../remotion/PrayerVideo';
-import type {PrayerVideoProps} from '../../remotion/schema';
 import {api, type Job, type LanguageJobState, waitForJob} from './api';
 
 type Language = {code: string; label: string; config: string};
@@ -14,8 +11,6 @@ type Status = {
   defaultTranslationProvider: 'openai' | 'kie';
   providers: Record<'openai' | 'kie', {configured: boolean; label: string}>;
   batchSupported: boolean;
-  lambdaConfigured: boolean;
-  lambdaRegion: string;
   batchConfigured: boolean;
   batchRegion: string;
   languages: Language[];
@@ -34,12 +29,12 @@ type LocalFiles = {audio?: File; srt?: File};
 const stageLabels: Record<string, string> = {
   queued: 'Đang chờ', translating: 'GPT Terra đang dịch', generating: 'Đang rewrite',
   'script-ready': 'Kịch bản sẵn sàng', planning: 'Đang tạo timeline',
-  'uploading-media': 'Đang tải media lên S3', 'starting-lambda': 'Đang khởi chạy Lambda',
+  'uploading-media': 'Đang tải media lên S3',
   'starting-batch': 'Đang khởi chạy Batch', 'batch-queued': 'Đang chờ EC2 Spot',
   rendering: 'FFmpeg đang render', completed: 'Video sẵn sàng', failed: 'Có lỗi',
 };
 
-// Seed ngẫu nhiên để thứ tự video/ảnh khác nhau mỗi lần (dùng chung cho preview + render).
+// Seed ngẫu nhiên để thứ tự video/ảnh khác nhau mỗi lần render.
 const randomSeed = () => Math.random().toString(36).slice(2, 10);
 
 const formatBytes = (bytes = 0) => {
@@ -81,7 +76,6 @@ export const App = () => {
   const [workflow, setWorkflow] = useState<Job | null>(null);
   const [renderJob, setRenderJob] = useState<Job | null>(null);
   const [files, setFiles] = useState<Record<string, LocalFiles>>({});
-  const [previews, setPreviews] = useState<Record<string, PrayerVideoProps>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState('');
   const [mediaOptions, setMediaOptions] = useState({
@@ -128,7 +122,7 @@ export const App = () => {
   );
 
   const startWorkflow = async () => {
-    setError(''); setRenderJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
+    setError(''); setRenderJob(null); setFiles({}); setActionBusy('workflow', true);
     try {
       const {jobId} = await api<{jobId: string}>('/api/workflows', {
         method: 'POST', body: JSON.stringify({
@@ -145,7 +139,7 @@ export const App = () => {
   };
 
   const skipScriptStep = async () => {
-    setError(''); setRenderJob(null); setPreviews({}); setFiles({}); setActionBusy('workflow', true);
+    setError(''); setRenderJob(null); setFiles({}); setActionBusy('workflow', true);
     try {
       const {jobId} = await api<{jobId: string}>('/api/workflows/skip-script', {
         method: 'POST', body: JSON.stringify({languages: selectedLanguages}),
@@ -153,18 +147,6 @@ export const App = () => {
       setWorkflow(await api<Job>(`/api/jobs/${jobId}`));
     } catch (nextError) { setError((nextError as Error).message); }
     finally { setActionBusy('workflow', false); }
-  };
-
-  const createPreview = async (code: string) => {
-    if (!workflow) return;
-    setError(''); setActionBusy(`preview-${code}`, true);
-    try {
-      const plan = await api<PrayerVideoProps>(`/api/workflows/${workflow.id}/${code}/preview`, {
-        method: 'POST', body: JSON.stringify({...mediaOptions, introText: introTexts[code] || ''}),
-      });
-      setPreviews((current) => ({...current, [code]: plan}));
-    } catch (nextError) { setError((nextError as Error).message); }
-    finally { setActionBusy(`preview-${code}`, false); }
   };
 
   const uploadAssets = async (code: string) => {
@@ -175,7 +157,6 @@ export const App = () => {
       const data = new FormData(); data.append('audio', pair.audio); data.append('srt', pair.srt);
       await api(`/api/workflows/${workflow.id}/${code}/assets`, {method: 'POST', body: data});
       setWorkflow(await api<Job>(`/api/jobs/${workflow.id}`));
-      await createPreview(code);
     } catch (nextError) { setError((nextError as Error).message); }
     finally { setActionBusy(`upload-${code}`, false); }
   };
@@ -286,7 +267,7 @@ export const App = () => {
             <section className="panel workflow-panel">
               <div className="workflow-heading">
                 <div><StepLabel number="02">Tiến độ theo ngôn ngữ</StepLabel><p className="section-copy">Khi kịch bản sẵn sàng, tải file TXT và dùng nó để tạo MP3/SRT bên ngoài.</p></div>
-                <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setRenderJob(null); setPreviews({}); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
+              <div className="workflow-actions"><strong>{Math.round(workflow.progress * 100)}%</strong><button className="ghost" disabled={Boolean(workflowActive)} onClick={() => {setWorkflow(null); setRenderJob(null); setFiles({}); setMediaOptions((current) => ({...current, seed: randomSeed()}));}}>Tạo workflow mới</button></div>
               </div>
               <div className="progress-track"><span style={{width: `${workflow.progress * 100}%`}} /></div>
               <div className="language-workflows">
@@ -294,7 +275,6 @@ export const App = () => {
                   const definition = status?.languages.find((item) => item.code === code);
                   const lane = workflow.languages?.[code] as LanguageJobState | undefined;
                   const renderLane = renderJob?.languages?.[code];
-                  const preview = previews[code];
                   const pair = files[code] || {};
                   const scriptReady = lane?.stage === 'script-ready';
                   const assetsReady = Boolean(lane?.assets);
@@ -315,10 +295,8 @@ export const App = () => {
                           </div>
                           <div className="card-actions">
                             <button className="secondary" disabled={busy[`upload-${code}`] || !pair.audio || !pair.srt} onClick={() => uploadAssets(code)}>{busy[`upload-${code}`] ? 'Đang upload…' : assetsReady ? 'Upload lại MP3 + SRT' : 'Upload MP3 + SRT'}</button>
-                            <button className="ghost" disabled={!assetsReady || busy[`preview-${code}`]} onClick={() => createPreview(code)}>{busy[`preview-${code}`] ? 'Đang tạo…' : 'Preview Remotion'}</button>
                             <button className="primary" disabled={!assetsReady || !status?.batchConfigured || busy.render} onClick={() => renderLanguages([code])}>Render FFmpeg · worker 4 vCPU</button>
                           </div>
-                          {preview && <div className="inline-preview"><Player component={PrayerVideo} inputProps={preview} durationInFrames={preview.durationInFrames} compositionWidth={1920} compositionHeight={1080} fps={30} controls style={{width: '100%', aspectRatio: '16 / 9'}} /><div className="preview-meta"><span>{Math.round(preview.audioDurationSeconds / 60)} phút</span><span>{preview.selectedVideos.length} video</span><span>{preview.captions.length} caption</span></div></div>}
                         </div>
                       )}
                       {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span>{renderLane.renderStartedAt && <span className="render-timer">⏱ FFmpeg: {formatElapsedTime(renderLane.renderStartedAt, renderLane.renderFinishedAt, clockNow)}</span>}</div>{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}</div>}
@@ -329,7 +307,7 @@ export const App = () => {
             </section>
 
             <section className="panel render-settings">
-              <div><StepLabel number="03">Nguồn hình & AWS Batch FFmpeg</StepLabel><p className="section-copy">Tối đa 5 EC2 Spot worker ARM, mỗi worker 4 vCPU, render đồng thời từng ngôn ngữ. Media được cache trên S3; Remotion chỉ dùng để preview.</p></div>
+              <div><StepLabel number="03">Nguồn hình & AWS Batch FFmpeg</StepLabel><p className="section-copy">Tối đa 5 EC2 Spot worker ARM, mỗi worker 4 vCPU, render đồng thời từng ngôn ngữ. Media được cache trên S3.</p></div>
               <div className="settings-grid">
                 <label><span>Thư mục footage</span><input value={mediaOptions.videoDir} onChange={(event) => setMediaOptions({...mediaOptions, videoDir: event.target.value})} /></label>
                 <label><span>Thư mục ảnh tĩnh</span><input value={mediaOptions.imageDir} onChange={(event) => setMediaOptions({...mediaOptions, imageDir: event.target.value})} /></label>

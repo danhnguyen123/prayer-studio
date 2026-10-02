@@ -15,8 +15,6 @@
 
 !web/
 !web/**
-!remotion/
-!remotion/**
 !server/
 !server/**
 !src/

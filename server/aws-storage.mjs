@@ -13,15 +13,13 @@ import {getSignedUrl} from '@aws-sdk/s3-request-presigner';
 const clients = new Map();
 
 export const awsCredentials = () => {
-  const accessKeyId =
-    process.env.AWS_ACCESS_KEY_ID || process.env.REMOTION_AWS_ACCESS_KEY_ID;
-  const secretAccessKey =
-    process.env.AWS_SECRET_ACCESS_KEY || process.env.REMOTION_AWS_SECRET_ACCESS_KEY;
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) return undefined;
   return {
     accessKeyId,
     secretAccessKey,
-    sessionToken: process.env.AWS_SESSION_TOKEN || process.env.REMOTION_AWS_SESSION_TOKEN,
+    sessionToken: process.env.AWS_SESSION_TOKEN,
   };
 };
 

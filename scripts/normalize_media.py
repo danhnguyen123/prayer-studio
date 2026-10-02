@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Chuẩn hoá thư viện footage cho Remotion: cắt <= N giây, ép CFR 30fps, H.264.
+"""Chuẩn hoá thư viện footage cho FFmpeg: cắt <= N giây, ép CFR 30fps, H.264.
 
-Vì sao cần: Remotion (Lambda) báo "No frame found at position ..." khi video nguồn
-là VFR, fps lệch 30, hoặc metadata duration dài hơn số frame thật. Chuẩn hoá tất cả
+Vì sao cần: footage VFR, fps lệch 30 hoặc metadata duration sai có thể làm trim/seek
+không ổn định. Chuẩn hoá tất cả
 footage về **CFR 30fps + độ dài <= 30s + H.264 + yuv420p** làm mọi clip đồng nhất và
 mọi frame N luôn tồn tại tại N/30 giây.
 
@@ -11,7 +11,7 @@ mọi frame N luôn tồn tại tại N/30 giây.
 - Bỏ audio (-an): footage phát muted trong video nên không cần, đồng thời xoá luôn
   trường hợp audio dài hơn video.
 - Tuỳ chọn hạ chiều cao tối đa --height (mặc định 1080; video render 1080p nên 4K là
-  phí dung lượng + chậm trên Lambda). --height 0 = giữ nguyên độ phân giải.
+  phí dung lượng + chậm khi upload/cache). --height 0 = giữ nguyên độ phân giải.
 - Idempotent: bỏ qua file đã có ở output (trừ khi --force).
 
 Usage:
@@ -40,8 +40,7 @@ def build_cmd(src: Path, dst: Path, args) -> list[str]:
         "-preset", args.preset,
         "-crf", str(args.crf),
         "-pix_fmt", "yuv420p",
-        # KHÔNG B-frame + GOP ngắn: thứ tự giải mã = hiển thị, seek chắc chắn →
-        # tránh lỗi Remotion "No frame found at position" khi trích frame.
+        # KHÔNG B-frame + GOP ngắn: thứ tự giải mã = hiển thị, trim/seek ổn định.
         "-bf", "0",
         "-g", str(args.fps * 2),
         "-video_track_timescale", str(args.fps * 1000),

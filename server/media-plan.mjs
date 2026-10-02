@@ -1,12 +1,35 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import {parseSrt} from '@remotion/captions';
 import {
   FPS,
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
 } from './constants.mjs';
+
+const parseSrtTime = (value) => {
+  const match = String(value).trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{3})$/);
+  if (!match) return null;
+  const [, hours, minutes, seconds, milliseconds] = match;
+  return (((Number(hours) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000) + Number(milliseconds);
+};
+
+export const parseSrtCaptions = (input) => String(input || '')
+  .replace(/^\uFEFF/, '')
+  .trim()
+  .split(/\r?\n\s*\r?\n/)
+  .map((block) => {
+    const lines = block.split(/\r?\n/);
+    const timingIndex = lines.findIndex((line) => line.includes('-->'));
+    if (timingIndex < 0) return null;
+    const [startRaw, endRaw] = lines[timingIndex].split('-->').map((part) => part.trim().split(/\s+/)[0]);
+    const startMs = parseSrtTime(startRaw);
+    const endMs = parseSrtTime(endRaw);
+    const text = lines.slice(timingIndex + 1).join('\n').trim();
+    if (startMs === null || endMs === null || endMs <= startMs || !text) return null;
+    return {text, startMs, endMs, timestampMs: null, confidence: null};
+  })
+  .filter(Boolean);
 
 const hashSeed = (value) => {
   let hash = 2166136261;
@@ -80,9 +103,6 @@ export const probeDuration = (filePath) =>
     });
   });
 
-const toMediaUrl = (baseUrl, filePath) =>
-  `${baseUrl}/api/media-file?path=${encodeURIComponent(filePath)}`;
-
 const clampVideoCount = (value) =>
   Math.max(10, Math.min(15, Math.round(Number(value) || 12)));
 
@@ -93,8 +113,6 @@ export const buildMediaPlan = async ({
   imageDir,
   videoCount = 12,
   seed = 'prayer-studio',
-  previewSeconds = null,
-  baseUrl,
   introSeconds = 0,
   introText = '',
   musicPath = null,
@@ -126,9 +144,7 @@ export const buildMediaPlan = async ({
   );
   const selectedImages = shuffle(allImages, random);
   const videoDurations = await Promise.all(selectedVideos.map(probeDuration));
-  const targetSeconds = previewSeconds
-    ? Math.min(audioDuration, Math.max(1, Number(previewSeconds)))
-    : audioDuration;
+  const targetSeconds = audioDuration;
   const introFrames = Math.max(0, Math.round(Number(introSeconds || 0) * FPS));
   const bodyFrames = Math.ceil(targetSeconds * FPS);
   const totalFrames = introFrames + bodyFrames;
@@ -150,7 +166,6 @@ export const buildMediaPlan = async ({
     clips.push({
       id: `image-${clips.length + 1}`,
       type: 'image',
-      src: toMediaUrl(baseUrl, sourcePath),
       sourcePath,
       from: cursorPos,
       durationInFrames,
@@ -176,7 +191,6 @@ export const buildMediaPlan = async ({
     clips.push({
       id: `video-${clips.length + 1}`,
       type: 'video',
-      src: toMediaUrl(baseUrl, sourcePath),
       sourcePath,
       from: cursorPos,
       durationInFrames,
@@ -205,15 +219,13 @@ export const buildMediaPlan = async ({
     }
   }
 
-  const {captions} = parseSrt({input: srtText});
+  const captions = parseSrtCaptions(srtText);
 
   let resolvedMusicPath = null;
-  let musicSrc = null;
   if (musicPath) {
     const exists = await fs.access(musicPath).then(() => true).catch(() => false);
     if (exists) {
       resolvedMusicPath = path.resolve(musicPath);
-      musicSrc = toMediaUrl(baseUrl, resolvedMusicPath);
     }
   }
 
@@ -222,16 +234,11 @@ export const buildMediaPlan = async ({
     durationInFrames: totalFrames,
     audioDurationSeconds: audioDuration,
     renderedDurationSeconds: targetSeconds + introFrames / FPS,
-    audioSrc: toMediaUrl(baseUrl, audioPath),
     captions: captions.filter((caption) => caption.startMs < targetSeconds * 1000),
     clips,
-    selectedVideos,
-    selectedImages,
     seed,
-    previewSeconds: previewSeconds ? Number(previewSeconds) : null,
     introSeconds: introFrames / FPS,
     introText: String(introText || ''),
-    musicSrc,
     musicPath: resolvedMusicPath,
     musicVolume: Number(musicVolume),
     musicIntroVolume: Number(musicIntroVolume),

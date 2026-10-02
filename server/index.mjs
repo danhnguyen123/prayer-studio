@@ -1,5 +1,4 @@
 import path from 'node:path';
-import fs from 'node:fs/promises';
 import {mkdirSync, readFileSync} from 'node:fs';
 import {randomUUID, timingSafeEqual} from 'node:crypto';
 import express from 'express';
@@ -12,15 +11,12 @@ try {
   if (error.code !== 'ENOENT') console.warn(`Không đọc được .env: ${error.message}`);
 }
 
-const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, media, renderer, lambdaRenderer, batchRenderer, {prepVoiceover}] =
+const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, batchRenderer, {prepVoiceover}] =
   await Promise.all([
     import('./constants.mjs'),
     import('./translation-provider.mjs'),
     import('./script-pipeline.mjs'),
     import('./job-store.mjs'),
-    import('./media-plan.mjs'),
-    import('./render.mjs'),
-    import('./lambda-render.mjs'),
     import('./aws-batch-render.mjs'),
     import('./voiceover-prep.mjs'),
   ]);
@@ -31,11 +27,6 @@ const port = Number(process.env.APP_PORT || 4300);
 // local mặc định 127.0.0.1 cho an toàn. Đặt APP_HOST để ghi đè.
 const host =
   process.env.APP_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
-// baseUrl RỖNG = URL tương đối (cùng origin) cho media/preview/download → hoạt động dù
-// truy cập qua localhost, public IP hay domain. Local render (headless Chrome) cần tuyệt đối.
-const clientBaseUrl = '';
-const localBaseUrl = `http://127.0.0.1:${port}`;
-const allowedMediaRoots = new Set([PROJECT_ROOT]);
 const uploadRoot = path.join(PROJECT_ROOT, 'workspace', 'uploads');
 mkdirSync(uploadRoot, {recursive: true});
 
@@ -54,27 +45,6 @@ const upload = multer({
     callback(valid ? null : new Error('Chỉ chấp nhận file MP3 và SRT.'), valid);
   },
 });
-
-const registerMediaRoots = (roots) => {
-  for (const root of roots) {
-    if (root) allowedMediaRoots.add(path.resolve(root));
-  }
-};
-
-// Cấp quyền sẵn các thư mục media mặc định lúc khởi động → media-file phục vụ được
-// ngay cả trước khi có preview/render (không phụ thuộc trạng thái in-memory).
-registerMediaRoots([
-  DEFAULT_PATHS.videoDir,
-  DEFAULT_PATHS.imageDir,
-  DEFAULT_PATHS.musicPath && path.dirname(DEFAULT_PATHS.musicPath),
-  DEFAULT_PATHS.audioPath && path.dirname(DEFAULT_PATHS.audioPath),
-  DEFAULT_PATHS.srtPath && path.dirname(DEFAULT_PATHS.srtPath),
-]);
-
-const isWithin = (root, candidate) => {
-  const relative = path.relative(root, candidate);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-};
 
 const validateLanguages = (languages) => {
   const selected = Array.isArray(languages) ? languages : Object.keys(LANGUAGE_DEFINITIONS);
@@ -150,12 +120,6 @@ if (basicAuthUser && basicAuthPass) {
     `Basic ${Buffer.from(`${basicAuthUser}:${basicAuthPass}`).toString('base64')}`,
   );
   app.use((request, response, next) => {
-    // Player nạp media qua thẻ <video>/<audio> với crossOrigin → không gửi Basic Auth.
-    // Miễn auth cho media-file; endpoint đó chỉ phục vụ đuôi media trong thư mục đã cấp quyền.
-    if (request.path === '/api/media-file') {
-      next();
-      return;
-    }
     const provided = Buffer.from(String(request.headers.authorization || ''));
     if (
       provided.length === expected.length &&
@@ -188,16 +152,8 @@ app.get('/api/status', (_request, response) => {
     batchSupported: true,
     translationModel: process.env.OPENAI_MODEL || 'gpt-5.6-terra',
     translationReasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
-    lambdaConfigured: Boolean(
-      process.env.REMOTION_FUNCTION_NAME &&
-        (process.env.REMOTION_AWS_ACCESS_KEY_ID ||
-          process.env.AWS_ACCESS_KEY_ID ||
-          process.env.AWS_PROFILE),
-    ),
-    lambdaRegion: process.env.REMOTION_AWS_REGION || 'ap-southeast-1',
     batchConfigured: batchRenderer.isBatchConfigured(),
-    batchRegion:
-      process.env.AWS_BATCH_REGION || process.env.REMOTION_AWS_REGION || 'ap-southeast-1',
+    batchRegion: process.env.AWS_BATCH_REGION || process.env.AWS_REGION || 'ap-southeast-1',
     languages: Object.entries(LANGUAGE_DEFINITIONS).map(([code, value]) => ({
       code,
       label: value.label,
@@ -383,69 +339,6 @@ app.post(
   },
 );
 
-app.post('/api/workflows/:jobId/:language/preview', async (request, response, next) => {
-  try {
-    const workflow = jobs.getJob(request.params.jobId);
-    const language = workflow?.languages?.[request.params.language];
-    if (!workflow || !language?.assets) throw new Error('Hãy upload MP3 và SRT trước.');
-    const options = {
-      ...DEFAULT_PATHS,
-      ...request.body,
-      audioPath: language.assets.audioPath,
-      srtPath: language.assets.srtPath,
-      seed: `${request.body?.seed || 'prayer-studio'}-${request.params.language}`,
-    };
-    registerMediaRoots([
-      options.videoDir,
-      options.imageDir,
-      options.musicPath && path.dirname(options.musicPath),
-    ]);
-    const plan = await media.buildMediaPlan({...options, baseUrl: clientBaseUrl});
-    response.json(plan);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/api/lambda/render', (request, response, next) => {
-  try {
-    const workflow = jobs.getJob(String(request.body?.workflowId || ''));
-    if (!workflow || workflow.type !== 'prayer-workflow') {
-      throw new Error('Workflow không tồn tại.');
-    }
-    const selectedLanguages = validateLanguages(request.body?.languages).filter(
-      (code) => workflow.languages[code],
-    );
-    for (const code of selectedLanguages) {
-      if (!workflow.languages[code]?.assets) {
-        throw new Error(`${LANGUAGE_DEFINITIONS[code].label}: chưa upload MP3/SRT.`);
-      }
-    }
-    const languageStates = Object.fromEntries(
-      selectedLanguages.map((code) => [
-        code,
-        {code, stage: 'queued', progress: 0, message: 'Đang chờ Lambda'},
-      ]),
-    );
-    const job = jobs.createJob('lambda-render', {
-      workflowId: workflow.id,
-      languages: languageStates,
-      selectedLanguages,
-    });
-    const options = {...DEFAULT_PATHS, ...request.body};
-    lambdaRenderer.runParallelLambdaRenderJob({
-      jobId: job.id,
-      workflowId: workflow.id,
-      languages: selectedLanguages,
-      options,
-      baseUrl: clientBaseUrl,
-    });
-    response.status(202).json({jobId: job.id});
-  } catch (error) {
-    next(error);
-  }
-});
-
 app.post('/api/batch/render', (request, response, next) => {
   try {
     if (!batchRenderer.isBatchConfigured()) {
@@ -480,7 +373,6 @@ app.post('/api/batch/render', (request, response, next) => {
       workflowId: workflow.id,
       languages: selectedLanguages,
       options,
-      baseUrl: clientBaseUrl,
     });
     response.status(202).json({jobId: job.id});
   } catch (error) {
@@ -499,36 +391,6 @@ app.post('/api/generate', (request, response, next) => {
   }
 });
 
-app.post('/api/video/plan', async (request, response, next) => {
-  try {
-    const options = {...DEFAULT_PATHS, ...request.body};
-    registerMediaRoots([
-      options.videoDir,
-      options.imageDir,
-      path.dirname(options.audioPath),
-      path.dirname(options.srtPath),
-      options.musicPath && path.dirname(options.musicPath),
-    ]);
-    const plan = await media.buildMediaPlan({...options, baseUrl: clientBaseUrl});
-    response.json(plan);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/api/render', (request, response, next) => {
-  try {
-    const options = {...DEFAULT_PATHS, ...request.body};
-    const job = jobs.createJob('video-render', {
-      preview: Boolean(options.previewSeconds),
-    });
-    renderer.runRenderJob(job.id, options, localBaseUrl, registerMediaRoots);
-    response.status(202).json({jobId: job.id});
-  } catch (error) {
-    next(error);
-  }
-});
-
 app.get('/api/jobs/:jobId', (request, response) => {
   const job = jobs.getJob(request.params.jobId);
   if (!job) {
@@ -536,45 +398,6 @@ app.get('/api/jobs/:jobId', (request, response) => {
     return;
   }
   response.json(job);
-});
-
-const MEDIA_FILE_EXTENSIONS = new Set([
-  '.mp4', '.mov', '.webm', '.m4v', // video
-  '.mp3', '.wav', '.m4a', '.aac', // audio
-  '.jpg', '.jpeg', '.png', '.webp', '.gif', // image
-  '.srt', '.vtt', // subtitle
-]);
-
-app.get('/api/media-file', async (request, response, next) => {
-  try {
-    const requestedPath = path.resolve(String(request.query.path || ''));
-    // Chỉ phục vụ ĐUÔI media (endpoint này miễn auth nên không được lộ mã nguồn/khác).
-    if (!MEDIA_FILE_EXTENSIONS.has(path.extname(requestedPath).toLowerCase())) {
-      response.status(403).json({error: 'Loại file không được phép.'});
-      return;
-    }
-    const allowed = [...allowedMediaRoots].some((root) => isWithin(root, requestedPath));
-    if (!allowed) {
-      response.status(403).json({error: 'Đường dẫn media chưa được cấp quyền.'});
-      return;
-    }
-    await fs.access(requestedPath);
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Cache-Control', 'public, max-age=3600');
-    response.sendFile(requestedPath);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get('/api/renders/:fileName', async (request, response, next) => {
-  try {
-    const filePath = path.join(PROJECT_ROOT, 'renders', path.basename(request.params.fileName));
-    await fs.access(filePath);
-    response.sendFile(filePath);
-  } catch (error) {
-    next(error);
-  }
 });
 
 if (process.env.NODE_ENV === 'production') {

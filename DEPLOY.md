@@ -4,7 +4,7 @@ Repo: `git@github.com:danhnguyen123/prayer-studio.git`
 Server: Oracle Cloud, Ubuntu, ARM (aarch64), đã cài Docker.
 
 Kiến trúc: container chỉ là **orchestrator nhẹ** (Node + Python + ffmpeg). Việc render
-nặng chạy trên **AWS Lambda**, nên container **không cần Chrome** và không cần máy mạnh.
+nặng chạy trên **AWS Batch FFmpeg**, nên container **không cần Chrome** và không cần máy mạnh.
 
 ---
 
@@ -97,8 +97,8 @@ APP_BASIC_AUTH_PASS=<mật-khẩu-mạnh-ngẫu-nhiên>
   bất kỳ ai biết IP:port đều gọi được API → tiêu tiền OpenAI/DeepSeek/AWS của bạn. Server sẽ
   in cảnh báo khi chưa bật.
 - `.env` để quyền `600`, thuộc user `deploy`.
-- AWS: tạo **IAM user least-privilege** chỉ có quyền trên đúng S3 bucket của Remotion + đúng
-  Lambda function, thay vì key toàn quyền. Nếu key từng lỡ commit → rotate ngay.
+- AWS: tạo **IAM user least-privilege** chỉ có quyền trên đúng S3 bucket, Batch queue/job
+  definition và ECR repository. Nếu key từng lỡ commit → rotate ngay.
 - Nên đặt cổng lạ (vd `8137` thay vì `4300`) để giảm quét tự động; cân nhắc thêm TLS bằng
   Caddy/nginx trước app nếu cần HTTPS.
 

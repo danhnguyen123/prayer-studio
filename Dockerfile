@@ -9,8 +9,8 @@ RUN npm run build
 # ---- Runtime stage ----
 FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
-# ffmpeg/ffprobe: đọc thời lượng media + xoá metadata sau render.
-# python3: engine viết kịch bản (run.py). Không cần Chrome vì render chạy trên AWS Lambda.
+# ffmpeg/ffprobe: đọc thời lượng media trước khi gửi AWS Batch.
+# python3: engine viết kịch bản (run.py). Render production chạy bằng FFmpeg worker.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg python3 python3-pip ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
@@ -27,7 +27,6 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Mã nguồn app + dữ liệu tĩnh cần cho runtime
 COPY server ./server
-COPY remotion ./remotion
 COPY src ./src
 COPY configs ./configs
 COPY personas ./personas
