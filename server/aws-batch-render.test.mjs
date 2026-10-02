@@ -15,12 +15,15 @@ test('FFmpeg worker shifts voice captions after intro and fades verse', () => {
   assert.match(ass, /Verse line 1\\NVerse line 2/);
   assert.match(ass, /0:00:08\.50,0:00:09\.50,Caption/);
   assert.match(ass, /Outline, Shadow/);
-  assert.match(ass, /Style: Caption,Noto Sans,124,/);
+  assert.match(ass, /Style: Caption,Noto Sans,112,/);
+  assert.match(ass, /,1,3\.5,0\.7,5,/);
 });
 
-test('FFmpeg image zoom uses a 2x canvas with stable even coordinates and no lower overlay', async () => {
+test('FFmpeg image zoom renders on a 2x canvas before stable downscaling and has no lower overlay', async () => {
   const worker = await fs.readFile(new URL('../worker/ffmpeg-worker.mjs', import.meta.url), 'utf8');
   assert.match(worker, /zoomSourceWidth = plan\.width \* 2/);
   assert.match(worker, /trunc\(\(iw-iw\/zoom\)\/4\)\*2/);
+  assert.match(worker, /s=\$\{zoomSourceWidth\}x\$\{zoomSourceHeight\}:fps=/);
+  assert.match(worker, /flags=lanczos\+accurate_rnd/);
   assert.doesNotMatch(worker, /drawbox=x=0:y=ih\*0\.48/);
 });
