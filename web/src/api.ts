@@ -75,4 +75,6 @@ export type LanguageJobState = {
   outputSizeInBytes?: number;
   renderId?: string;
   batchJobId?: string;
+  renderStartedAt?: string;
+  renderFinishedAt?: string;
 };

@@ -210,10 +210,12 @@ const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
     const workerStatus = await readWorkerProgress({config, statusKey});
     if (remote.status === 'RUNNING') {
       const workerProgress = Math.max(0, Math.min(1, Number(workerStatus?.progress || 0)));
+      const renderStartedAt = getJob(jobId)?.languages?.[code]?.renderStartedAt || new Date().toISOString();
       setLanguage(jobId, code, {
         stage: 'rendering',
         progress: 0.25 + workerProgress * 0.72,
         message: workerStatus?.message || `FFmpeg đang render ${Math.round(workerProgress * 100)}%`,
+        renderStartedAt,
       });
     } else if (remote.status !== 'SUCCEEDED') {
       setLanguage(jobId, code, {
@@ -238,6 +240,7 @@ const renderLanguage = async ({jobId, workflowId, code, options, baseUrl}) => {
         stage: 'completed',
         progress: 1,
         message: 'Video FFmpeg đã sẵn sàng (metadata đã làm sạch)',
+        renderFinishedAt: new Date().toISOString(),
         downloadUrl,
         outputSizeInBytes: object.ContentLength,
         outputKey,
@@ -258,7 +261,14 @@ export const runSequentialBatchRenderJob = async ({jobId, workflowId, languages,
       updateJob(jobId, {message: `AWS Batch một worker: ${completed}/${languages.length} video`});
     } catch (error) {
       appendJobLog(jobId, `[${code}] ${error.stack || error.message}`);
-      setLanguage(jobId, code, {stage: 'failed', progress: 1, message: error.message, error: error.message});
+      const current = getJob(jobId)?.languages?.[code];
+      setLanguage(jobId, code, {
+        stage: 'failed',
+        progress: 1,
+        message: error.message,
+        error: error.message,
+        ...(current?.renderStartedAt ? {renderFinishedAt: new Date().toISOString()} : {}),
+      });
     }
   }
   updateJob(jobId, {

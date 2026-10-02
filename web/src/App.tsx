@@ -51,6 +51,20 @@ const formatBytes = (bytes = 0) => {
   return `${value.toFixed(index ? 1 : 0)} ${units[index]}`;
 };
 
+const formatElapsedTime = (startedAt?: string, finishedAt?: string, now = Date.now()) => {
+  if (!startedAt) return '';
+  const start = Date.parse(startedAt);
+  const finish = finishedAt ? Date.parse(finishedAt) : now;
+  if (!Number.isFinite(start) || !Number.isFinite(finish)) return '';
+  const totalSeconds = Math.max(0, Math.floor((finish - start) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 const StepLabel = ({number, children}: {number: string; children: React.ReactNode}) => (
   <div className="step-label"><span>{number}</span><h2>{children}</h2></div>
 );
@@ -76,6 +90,18 @@ export const App = () => {
     videosPerCycle: 10, imagesPerCycle: 5,
   });
   const [introTexts, setIntroTexts] = useState<Record<string, string>>({});
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  const hasActiveRenderTimer = Object.values(renderJob?.languages || {}).some(
+    (language) => language.renderStartedAt && !language.renderFinishedAt,
+  );
+
+  useEffect(() => {
+    if (!hasActiveRenderTimer) return undefined;
+    setClockNow(Date.now());
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRenderTimer]);
 
   useEffect(() => {
     api<Status>('/api/status').then((nextStatus) => {
@@ -295,7 +321,7 @@ export const App = () => {
                           {preview && <div className="inline-preview"><Player component={PrayerVideo} inputProps={preview} durationInFrames={preview.durationInFrames} compositionWidth={1920} compositionHeight={1080} fps={30} controls style={{width: '100%', aspectRatio: '16 / 9'}} /><div className="preview-meta"><span>{Math.round(preview.audioDurationSeconds / 60)} phút</span><span>{preview.selectedVideos.length} video</span><span>{preview.captions.length} caption</span></div></div>}
                         </div>
                       )}
-                      {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span></div>{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}</div>}
+                      {renderLane && <div className={`render-status ${renderLane.stage}`}><div><strong>{stageLabels[renderLane.stage] || renderLane.message}</strong><span>{renderLane.message} · {Math.round(renderLane.progress * 100)}%</span>{renderLane.renderStartedAt && <span className="render-timer">⏱ FFmpeg: {formatElapsedTime(renderLane.renderStartedAt, renderLane.renderFinishedAt, clockNow)}</span>}</div>{renderLane.downloadUrl && <a href={renderLane.downloadUrl} download>Download video {formatBytes(renderLane.outputSizeInBytes)}</a>}</div>}
                     </article>
                   );
                 })}
