@@ -77,7 +77,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,Noto Sans,62,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,0,0,0,100,100,-0.4,0,1,3,1,5,120,120,80,1
+Style: Caption,Noto Sans,124,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,0,0,0,100,100,-0.4,0,1,5,1,5,120,120,80,1
 Style: Verse,Noto Serif,54,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,-1,0,0,100,100,-0.4,0,1,3,1,5,120,120,80,1
 
 [Events]
@@ -113,16 +113,20 @@ const runFfmpeg = async ({filesByKey, outputPath, assPath}) => {
     const normalize = `scale=${plan.width}:${plan.height}:force_original_aspect_ratio=increase,crop=${plan.width}:${plan.height},setsar=1,fps=${plan.fps},format=yuv420p`;
     if (clip.type === 'image') {
       const frames = Math.max(1, clip.durationInFrames);
+      // Zoom trên canvas 2x rồi khóa tọa độ về pixel chẵn. Cách này tránh
+      // zoompan làm tròn tâm ảnh qua lại giữa hai pixel gây rung ở 1080p.
+      const zoomSourceWidth = plan.width * 2;
+      const zoomSourceHeight = plan.height * 2;
       filters.push(
-        `[${index}:v]${normalize},zoompan=z='1.01+0.085*on/${Math.max(1, frames - 1)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${plan.width}x${plan.height}:fps=${plan.fps},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`,
+        `[${index}:v]scale=${zoomSourceWidth}:${zoomSourceHeight}:force_original_aspect_ratio=increase,crop=${zoomSourceWidth}:${zoomSourceHeight},setsar=1,format=yuv420p,zoompan=z='1.01+0.085*on/${Math.max(1, frames - 1)}':x='trunc((iw-iw/zoom)/4)*2':y='trunc((ih-ih/zoom)/4)*2':d=${frames}:s=${plan.width}x${plan.height}:fps=${plan.fps},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`,
       );
     } else {
       filters.push(`[${index}:v]${normalize},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`);
     }
   });
   filters.push(`${labels.join('')}concat=n=${labels.length}:v=1:a=0[joined]`);
-  // Gần với lớp phủ Remotion hiện tại: tối nhẹ nửa dưới + vignette, rồi burn ASS.
-  filters.push(`[joined]drawbox=x=0:y=ih*0.48:w=iw:h=ih*0.52:color=black@0.18:t=fill,vignette=PI/7,ass=${assPath}[vout]`);
+  // Không phủ lớp đen nửa dưới; chỉ giữ vignette rất nhẹ và burn ASS.
+  filters.push(`[joined]vignette=PI/7,ass=${assPath}[vout]`);
 
   const intro = Math.max(0, Number(plan.introSeconds || 0));
   const fadeStart = Math.max(0, intro - 0.7);

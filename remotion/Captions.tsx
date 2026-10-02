@@ -14,7 +14,7 @@ const baseTextStyle = (isVerse: boolean): React.CSSProperties => ({
   maxWidth: 1520,
   color: '#fffdf6',
   fontFamily: FONT,
-  fontSize: isVerse ? 54 : 62,
+  fontSize: isVerse ? 54 : 124,
   fontStyle: isVerse ? 'italic' : 'normal',
   fontWeight: 700,
   lineHeight: isVerse ? 1.34 : 1.22,
@@ -22,7 +22,7 @@ const baseTextStyle = (isVerse: boolean): React.CSSProperties => ({
   textAlign: 'center',
   whiteSpace: 'pre-wrap',
   // Viền đen mỏng quanh chữ (stroke vẽ dưới, fill đè lên → viền mảnh, chữ sắc nét).
-  WebkitTextStroke: '3px rgba(0, 0, 0, 0.92)',
+  WebkitTextStroke: `${isVerse ? 3 : 5}px rgba(0, 0, 0, 0.92)`,
   paintOrder: 'stroke fill',
   textShadow: '0 2px 5px rgba(0, 0, 0, 0.55)',
 });
