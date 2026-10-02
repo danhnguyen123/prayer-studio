@@ -12,7 +12,6 @@ import {
   awsCredentials,
   getJson,
   headObject,
-  presignObject,
   putJson,
   uploadFileCached,
 } from './aws-storage.mjs';
@@ -303,17 +302,12 @@ const renderLanguage = async ({jobId, workflowId, code, options}) => {
         objectKey: outputKey,
         region: config.region,
       });
-      const downloadUrl = await presignObject({
-        bucketName: config.bucketName,
-        objectKey: outputKey,
-        region: config.region,
-      });
       setLanguage(jobId, code, {
         stage: 'completed',
         progress: 1,
         message: 'Video FFmpeg đã sẵn sàng (metadata đã làm sạch)',
         renderFinishedAt: new Date().toISOString(),
-        downloadUrl,
+        downloadUrl: `/api/batch/render/${jobId}/${code}/download`,
         outputSizeInBytes: object.ContentLength,
         outputKey,
       });

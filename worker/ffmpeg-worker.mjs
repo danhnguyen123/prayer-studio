@@ -56,15 +56,8 @@ export const buildAss = (value) => {
   const events = [];
   const introMs = Math.round(Number(value.introSeconds || 0) * 1000);
   if (introMs > 0 && String(value.introText || '').trim()) {
-    const left = Math.round(value.width * 0.12);
-    const right = Math.round(value.width * 0.88);
-    const top = Math.round(value.height * 0.16);
-    const bottom = Math.round(value.height * 0.84);
     events.push(
-      `Dialogue: 0,${assTime(0)},${assTime(introMs)},VerseFrame,,0,0,0,,{\\fad(3000,1000)\\an7\\pos(0,0)\\p1}m ${left} ${top} l ${right} ${top} l ${right} ${bottom} l ${left} ${bottom} l ${left} ${top}{\\p0}`,
-    );
-    events.push(
-      `Dialogue: 1,${assTime(0)},${assTime(introMs)},Verse,,0,0,0,,{\\fad(3000,1000)}${assText(value.introText.trim())}`,
+      `Dialogue: 0,${assTime(0)},${assTime(introMs)},Verse,,0,0,0,,{\\fad(3000,1000)}${assText(value.introText.trim())}`,
     );
   }
   for (const caption of value.captions || []) {
@@ -86,7 +79,6 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,Noto Sans,112,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,0,0,0,100,100,-0.4,0,1,3.5,0.7,5,120,120,80,1
 Style: Verse,Noto Serif,92,&H00F6FDFF,&H000000FF,&H00000000,&H70000000,-1,-1,0,0,100,100,-0.4,0,1,1.8,0.4,5,150,150,80,1
-Style: VerseFrame,Arial,10,&HFF000000,&HFF000000,&H70FFFFFF,&HFF000000,0,0,0,0,100,100,0,0,1,2,0,7,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -102,8 +94,8 @@ const runFfmpeg = async ({filesByKey, outputPath, assPath}) => {
     if (clip.type === 'video') {
       args.push('-ss', String((clip.trimBefore || 0) / plan.fps), '-t', String(duration), '-i', filesByKey[clip.objectKey]);
     } else {
-      // Một frame ảnh duy nhất; zoompan tự sinh đúng durationInFrames frame.
-      args.push('-i', filesByKey[clip.objectKey]);
+      // Lặp nguyên một frame ảnh; không zoom/pan/keyframe nên không thể rung.
+      args.push('-loop', '1', '-framerate', String(plan.fps), '-t', String(duration), '-i', filesByKey[clip.objectKey]);
     }
     inputIndexes.push(args.filter((item) => item === '-i').length - 1);
   }
@@ -120,12 +112,7 @@ const runFfmpeg = async ({filesByKey, outputPath, assPath}) => {
     labels.push(`[${label}]`);
     const normalize = `scale=${plan.width}:${plan.height}:force_original_aspect_ratio=increase,crop=${plan.width}:${plan.height},setsar=1,fps=${plan.fps},format=yuv420p`;
     if (clip.type === 'image') {
-      const frames = Math.max(1, clip.durationInFrames);
-      // Toàn bộ keyframe ảnh chạy trực tiếp ở độ phân giải output Full HD.
-      // Khóa tọa độ crop về pixel chẵn để phù hợp yuv420p.
-      filters.push(
-        `[${index}:v]scale=${plan.width}:${plan.height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${plan.width}:${plan.height},setsar=1,format=yuv420p,zoompan=z='1.01+0.085*on/${Math.max(1, frames - 1)}':x='trunc((iw-iw/zoom)/4)*2':y='trunc((ih-ih/zoom)/4)*2':d=${frames}:s=${plan.width}x${plan.height}:fps=${plan.fps},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`,
-      );
+      filters.push(`[${index}:v]${normalize},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`);
     } else {
       filters.push(`[${index}:v]${normalize},trim=duration=${duration},setpts=PTS-STARTPTS[${label}]`);
     }

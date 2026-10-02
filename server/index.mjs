@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {mkdirSync, readFileSync} from 'node:fs';
 import {randomUUID, timingSafeEqual} from 'node:crypto';
+import {pipeline as streamPipeline} from 'node:stream/promises';
 import express from 'express';
 import multer from 'multer';
 
@@ -11,7 +12,7 @@ try {
   if (error.code !== 'ENOENT') console.warn(`Không đọc được .env: ${error.message}`);
 }
 
-const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, batchRenderer, {prepVoiceover}, {startUploadCleanup}] =
+const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScript}, pipeline, jobs, batchRenderer, {prepVoiceover}, {startUploadCleanup}, awsStorage] =
   await Promise.all([
     import('./constants.mjs'),
     import('./translation-provider.mjs'),
@@ -20,6 +21,7 @@ const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScri
     import('./aws-batch-render.mjs'),
     import('./voiceover-prep.mjs'),
     import('./upload-cleanup.mjs'),
+    import('./aws-storage.mjs'),
   ]);
 
 const app = express();
@@ -401,6 +403,29 @@ app.post('/api/batch/render/:jobId/:language/stop', async (request, response, ne
 app.post('/api/batch/render/:jobId/stop', async (request, response, next) => {
   try {
     response.json(await batchRenderer.stopAllBatchRenders(request.params.jobId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/batch/render/:jobId/:language/download', async (request, response, next) => {
+  try {
+    const job = jobs.getJob(request.params.jobId);
+    const language = job?.languages?.[request.params.language];
+    if (!job || job.type !== 'aws-batch-ffmpeg-render' || !language?.outputKey) {
+      response.status(404).json({error: 'Video render không tồn tại hoặc chưa hoàn tất.'});
+      return;
+    }
+    const config = batchRenderer.batchConfig();
+    const object = await awsStorage.getObject({
+      bucketName: config.bucketName,
+      objectKey: language.outputKey,
+      region: config.region,
+    });
+    response.type('video/mp4');
+    response.attachment(`${request.params.language}-prayer.mp4`);
+    if (object.ContentLength) response.setHeader('Content-Length', String(object.ContentLength));
+    await streamPipeline(object.Body, response);
   } catch (error) {
     next(error);
   }
