@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Job, type LanguageJobState, waitForJob } from "./api";
+import {
+  api,
+  type Job,
+  type LanguageJobState,
+  type VoiceSettings,
+  waitForJob,
+} from "./api";
+import { VoicesPage } from "./VoicesPage";
 
 type Language = { code: string; label: string; config: string };
 type Status = {
@@ -13,6 +20,7 @@ type Status = {
   batchSupported: boolean;
   batchConfigured: boolean;
   batchRegion: string;
+  ai33Configured?: boolean;
   languages: Language[];
   defaults: {
     videoDir: string;
@@ -99,22 +107,33 @@ const StepLabel = ({
   </div>
 );
 
-type PageName = "write" | "upload" | "renders";
+type PageName = "write" | "upload" | "renders" | "voices";
 const pageFromPath = (): PageName => {
   const value = window.location.pathname.replace(/^\//, "").split("/")[0];
-  return value === "upload" || value === "renders" ? value : "write";
+  return value === "upload" || value === "renders" || value === "voices"
+    ? value
+    : "write";
 };
+
+const pageTitles: Record<PageName, string> = {
+  write: "Write Script",
+  upload: "Upload & Submit",
+  renders: "Render Queue",
+  voices: "Voice",
+};
+
+const formatDuration = (seconds = 0) => {
+  const total = Math.round(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
+
+const ALL_LANGUAGES = ["france", "poland", "germany", "italia", "korea"];
+// "skip" = Not write: workflow bỏ qua ngôn ngữ này.
+const SKIP_MODE = "skip";
 
 export const App = () => {
   const [status, setStatus] = useState<Status | null>(null);
   const [koreanScript, setKoreanScript] = useState("");
-  const [selectedLanguages, setSelectedLanguages] = useState([
-    "france",
-    "poland",
-    "germany",
-    "italia",
-    "korea",
-  ]);
   const [rewriteModes, setRewriteModes] = useState<Record<string, string>>({
     france: "gpt-korea",
     poland: "gpt-korea",
@@ -134,6 +153,9 @@ export const App = () => {
   const [renderJobs, setRenderJobs] = useState<Job[]>([]);
   const [activePage, setActivePage] = useState<PageName>(pageFromPath);
   const [restoreComplete, setRestoreComplete] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.dataset.theme === "light" ? "light" : "dark",
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => window.localStorage.getItem("prayer-sidebar-collapsed") === "true",
   );
@@ -153,6 +175,10 @@ export const App = () => {
     imagesPerCycle: 5,
   });
   const [introTexts, setIntroTexts] = useState<Record<string, string>>({});
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings | null>(
+    null,
+  );
+  const [voiceChoices, setVoiceChoices] = useState<Record<string, string>>({});
   const [clockNow, setClockNow] = useState(() => Date.now());
 
   const hasActiveRenderTimer = renderJobs.some((job) =>
@@ -187,14 +213,27 @@ export const App = () => {
       .catch((nextError) => setError(nextError.message));
   }, []);
 
+  const loadVoiceSettings = async () => {
+    try {
+      setVoiceSettings(await api<VoiceSettings>("/api/voices"));
+    } catch (nextError) {
+      setError((nextError as Error).message);
+    }
+  };
+
+  useEffect(() => {
+    void loadVoiceSettings();
+  }, []);
+
   useEffect(() => {
     const restore = async () => {
       try {
-        const [savedWorkflow, savedUploadWorkflow, savedRenders] = await Promise.all([
-          api<Job | null>("/api/workflows/current?kind=script"),
-          api<Job | null>("/api/workflows/current?kind=upload"),
-          api<Job[]>("/api/render-jobs"),
-        ]);
+        const [savedWorkflow, savedUploadWorkflow, savedRenders] =
+          await Promise.all([
+            api<Job | null>("/api/workflows/current?kind=script"),
+            api<Job | null>("/api/workflows/current?kind=upload"),
+            api<Job[]>("/api/render-jobs"),
+          ]);
         if (savedWorkflow) setWorkflow(savedWorkflow);
         if (savedUploadWorkflow) setUploadWorkflow(savedUploadWorkflow);
         setRenderJobs(savedRenders);
@@ -233,26 +272,38 @@ export const App = () => {
     setActivePage(page);
   };
 
+  const toggleTheme = () => {
+    const next = theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", next === "light" ? "#f1f1f1" : "#0d0d0d");
+    try {
+      window.localStorage.setItem("prayer-theme", next);
+    } catch {
+      // Trình duyệt chặn storage: vẫn đổi theme cho phiên hiện tại.
+    }
+    setTheme(next);
+  };
+
   const toggleSidebar = () =>
     setSidebarCollapsed((current) => {
       window.localStorage.setItem("prayer-sidebar-collapsed", String(!current));
       return !current;
     });
 
+  const selectedLanguages = useMemo(
+    () => ALL_LANGUAGES.filter((code) => rewriteModes[code] !== SKIP_MODE),
+    [rewriteModes],
+  );
   const workflowLanguages = useMemo(
     () =>
-      (activePage === "upload" ? uploadWorkflow : workflow)?.selectedLanguages ||
-      selectedLanguages,
+      (activePage === "upload" ? uploadWorkflow : workflow)
+        ?.selectedLanguages || selectedLanguages,
     [activePage, uploadWorkflow, workflow, selectedLanguages],
   );
   const setActionBusy = (key: string, value: boolean) =>
     setBusy((current) => ({ ...current, [key]: value }));
-  const toggleLanguage = (code: string) =>
-    setSelectedLanguages((current) =>
-      current.includes(code)
-        ? current.filter((item) => item !== code)
-        : [...current, code],
-    );
 
   const startWorkflow = async () => {
     setError("");
@@ -265,7 +316,9 @@ export const App = () => {
         body: JSON.stringify({
           koreanScript,
           languages: selectedLanguages,
-          rewriteModes,
+          rewriteModes: Object.fromEntries(
+            selectedLanguages.map((code) => [code, rewriteModes[code]]),
+          ),
           translationProvider,
           processingMode,
         }),
@@ -289,7 +342,7 @@ export const App = () => {
         "/api/workflows/skip-script",
         {
           method: "POST",
-          body: JSON.stringify({ languages: selectedLanguages }),
+          body: JSON.stringify({ languages: ALL_LANGUAGES }),
         },
       );
       const nextWorkflow = await api<Job>(`/api/jobs/${jobId}`);
@@ -340,6 +393,73 @@ export const App = () => {
       setError((nextError as Error).message);
     } finally {
       setActionBusy(`upload-${code}`, false);
+    }
+  };
+
+  const voiceoverRunning = Object.values(workflow?.languages || {}).some(
+    (lane) => lane.voiceover?.status === "running",
+  );
+
+  // waitForJob dừng khi workflow completed, nên voiceover cần poll riêng.
+  useEffect(() => {
+    if (!workflow || !voiceoverRunning) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        setWorkflow(await api<Job>(`/api/jobs/${workflow.id}`));
+      } catch {
+        // Giữ UI hiện tại khi mất mạng tạm thời.
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [workflow?.id, voiceoverRunning]);
+
+  const linkVoiceover = async (code: string) => {
+    if (!uploadWorkflow || !workflow) return;
+    setActionBusy(`link-${code}`, true);
+    try {
+      await api(
+        `/api/workflows/${uploadWorkflow.id}/${code}/assets/from-voiceover`,
+        {
+          method: "POST",
+          body: JSON.stringify({ sourceWorkflowId: workflow.id }),
+        },
+      );
+      setUploadWorkflow(await api<Job>(`/api/jobs/${uploadWorkflow.id}`));
+    } catch (nextError) {
+      setError((nextError as Error).message);
+    } finally {
+      setActionBusy(`link-${code}`, false);
+    }
+  };
+
+  // Tự gán voiceover AI33 cho bước 2, trừ khi user đã upload thủ công.
+  useEffect(() => {
+    if (!uploadWorkflow || !workflow) return;
+    for (const code of uploadWorkflow.selectedLanguages || []) {
+      const voiceover = workflow.languages?.[code]?.voiceover;
+      const assets = uploadWorkflow.languages?.[code]?.assets;
+      if (voiceover?.status !== "done" || busy[`link-${code}`]) continue;
+      const shouldLink =
+        !assets ||
+        (assets.source === "ai33" && assets.audioPath !== voiceover.audioPath);
+      if (shouldLink) void linkVoiceover(code);
+    }
+  }, [workflow, uploadWorkflow]);
+
+  const generateVoiceover = async (code: string, voiceKey: string) => {
+    if (!workflow) return;
+    setError("");
+    setActionBusy(`voiceover-${code}`, true);
+    try {
+      await api(`/api/workflows/${workflow.id}/${code}/voiceover/generate`, {
+        method: "POST",
+        body: JSON.stringify({ voiceKey }),
+      });
+      setWorkflow(await api<Job>(`/api/jobs/${workflow.id}`));
+    } catch (nextError) {
+      setError((nextError as Error).message);
+    } finally {
+      setActionBusy(`voiceover-${code}`, false);
     }
   };
 
@@ -411,13 +531,115 @@ export const App = () => {
   );
   const workflowActive = workflow && workflow.status !== "completed";
 
+  const renderVoiceoverPanel = (code: string, lane: LanguageJobState) => {
+    const library = voiceSettings?.languages[code];
+    const voices = library?.voices || [];
+    const voiceover = lane.voiceover;
+    const running = voiceover?.status === "running";
+    const selectedKey =
+      [
+        voiceChoices[code],
+        running ? voiceover?.voice?.key : undefined,
+        library?.defaultVoiceKey,
+      ].find((key) => key && voices.some((voice) => voice.key === key)) || "";
+    const base = `/api/workflows/${workflow?.id}/${code}/voiceover`;
+    return (
+      <div className="voiceover-panel">
+        <div className="voiceover-controls">
+          <span>Voiceover AI33</span>
+          {voices.length ? (
+            <select
+              className="mode-select"
+              value={selectedKey}
+              disabled={running}
+              onChange={(event) =>
+                setVoiceChoices((current) => ({
+                  ...current,
+                  [code]: event.target.value,
+                }))
+              }
+            >
+              {voices.map((voice) => (
+                <option key={voice.key} value={voice.key}>
+                  {voice.name} · {voice.speed}x
+                  {voice.key === library?.defaultVoiceKey ? " (mặc định)" : ""}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              className="ghost compact"
+              onClick={() => navigate("voices")}
+            >
+              Thêm voice cho ngôn ngữ này
+            </button>
+          )}
+          <button
+            className={voiceover?.status === "done" ? "secondary" : "primary"}
+            disabled={
+              !voices.length ||
+              running ||
+              busy[`voiceover-${code}`] ||
+              !voiceSettings?.ai33Configured
+            }
+            title={
+              !voiceSettings?.ai33Configured ? "Thiếu AI33_API_KEY" : undefined
+            }
+            onClick={() => generateVoiceover(code, selectedKey)}
+          >
+            {running
+              ? "Đang tạo…"
+              : voiceover?.status === "done"
+                ? "Tạo lại voiceover"
+                : "Tạo voiceover"}
+          </button>
+        </div>
+        {voiceover && (
+          <>
+            {running && (
+              <div className="lane-progress">
+                <span
+                  style={{ width: `${(voiceover.progress || 0) * 100}%` }}
+                />
+              </div>
+            )}
+            <p
+              className={`lane-message ${voiceover.status === "failed" ? "error-text" : ""}`}
+            >
+              {voiceover.message}
+              {voiceover.voice ? ` · ${voiceover.voice.name}` : ""}
+            </p>
+            {voiceover.status === "done" && (
+              <div className="voiceover-result">
+                <audio
+                  controls
+                  preload="none"
+                  src={`${base}/audio?v=${encodeURIComponent(voiceover.finishedAt || "")}`}
+                />
+                <span>{formatDuration(voiceover.durationSeconds)}</span>
+                <a href={`${base}/audio?download=1`} download>
+                  MP3
+                </a>
+                <a href={`${base}/srt`} download>
+                  SRT
+                </a>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderLanguageCard = (code: string) => {
     const definition = status?.languages.find((item) => item.code === code);
     const currentWorkflow = activePage === "upload" ? uploadWorkflow : workflow;
-    const lane = currentWorkflow?.languages?.[code] as LanguageJobState | undefined;
+    const lane = currentWorkflow?.languages?.[code] as
+      LanguageJobState | undefined;
     const pair = files[code] || {};
     const scriptReady = lane?.stage === "script-ready";
     const assetsReady = Boolean(lane?.assets);
+    const aiVoiceover = workflow?.languages?.[code]?.voiceover;
     return (
       <article className="language-card" key={code}>
         <div className="language-card-head">
@@ -455,10 +677,51 @@ export const App = () => {
                 )}
               </div>
             )}
+            {scriptReady &&
+              !lane?.skippedScript &&
+              lane?.outputPath &&
+              renderVoiceoverPanel(code, lane)}
           </>
         )}
         {activePage === "upload" && scriptReady && (
           <div className="production-zone">
+            {(lane?.assets || aiVoiceover?.status === "done") && (
+              <div className="asset-source">
+                <span>
+                  {lane?.assets?.source === "ai33"
+                    ? `Nguồn: AI33 · ${lane.assets.voiceName || ""}`
+                    : lane?.assets
+                      ? "Nguồn: upload thủ công"
+                      : "Đang gán voiceover AI33…"}
+                </span>
+                {lane?.assets?.source === "ai33" &&
+                  aiVoiceover?.status === "done" && (
+                    <>
+                      <audio
+                        controls
+                        preload="none"
+                        src={`/api/workflows/${workflow?.id}/${code}/voiceover/audio?v=${encodeURIComponent(aiVoiceover.finishedAt || "")}`}
+                      />
+                      <a
+                        href={`/api/workflows/${workflow?.id}/${code}/voiceover/srt`}
+                        download
+                      >
+                        SRT
+                      </a>
+                    </>
+                  )}
+                {lane?.assets?.source !== "ai33" &&
+                  aiVoiceover?.status === "done" && (
+                    <button
+                      className="ghost compact"
+                      disabled={busy[`link-${code}`]}
+                      onClick={() => linkVoiceover(code)}
+                    >
+                      Dùng voiceover AI33
+                    </button>
+                  )}
+              </div>
+            )}
             <div className="production-inputs">
               <div className="upload-grid">
                 <label>
@@ -569,6 +832,7 @@ export const App = () => {
               ["write", "01", "Write Script"],
               ["upload", "02", "Upload & Submit"],
               ["renders", "03", "Render Queue"],
+              ["voices", "04", "Voice"],
             ] as const
           ).map(([page, number, label]) => (
             <button
@@ -589,20 +853,27 @@ export const App = () => {
         <header className="topbar">
           <div>
             <p className="eyebrow">PRODUCTION WORKSPACE</p>
-            <h1>
-              {activePage === "write"
-                ? "Write Script"
-                : activePage === "upload"
-                  ? "Upload & Submit"
-                  : "Render Queue"}
-            </h1>
+            <h1>{pageTitles[activePage]}</h1>
           </div>
           <div className="status-stack">
-            <div
-              className={`status-pill ${status?.batchConfigured ? "ready" : "warning"}`}
-            >
-              <span /> AWS Batch{" "}
-              {status?.batchConfigured ? "sẵn sàng" : "chưa cấu hình"}
+            <div className="status-row">
+              <button
+                className="theme-toggle"
+                onClick={toggleTheme}
+                aria-label={
+                  theme === "light"
+                    ? "Chuyển sang giao diện tối"
+                    : "Chuyển sang giao diện sáng"
+                }
+              >
+                {theme === "light" ? "☾ Dark" : "☀ White"}
+              </button>
+              <div
+                className={`status-pill ${status?.batchConfigured ? "ready" : "warning"}`}
+              >
+                <span /> AWS Batch{" "}
+                {status?.batchConfigured ? "sẵn sàng" : "chưa cấu hình"}
+              </div>
             </div>
             <div className="model-name">
               {status?.translationModel || "Đang kiểm tra…"} ·{" "}
@@ -622,21 +893,6 @@ export const App = () => {
               {!workflow ? (
                 <section className="panel source-panel">
                   <StepLabel number="01">Kịch bản tiếng Hàn</StepLabel>
-                  <div className="language-row">
-                    {status?.languages.map((language) => (
-                      <label
-                        key={language.code}
-                        className={`language-chip ${selectedLanguages.includes(language.code) ? "active" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedLanguages.includes(language.code)}
-                          onChange={() => toggleLanguage(language.code)}
-                        />
-                        {language.label}
-                      </label>
-                    ))}
-                  </div>
                   <div className="api-controls">
                     <label>
                       <span>GPT provider</span>
@@ -670,32 +926,32 @@ export const App = () => {
                     </label>
                   </div>
                   <div className="rewrite-choice-list">
-                    {status?.languages
-                      .filter((language) =>
-                        selectedLanguages.includes(language.code),
-                      )
-                      .map((language) => (
-                        <div className="rewrite-choice-row" key={language.code}>
-                          <strong>{language.label}</strong>
-                          <select
-                            className="mode-select"
-                            value={rewriteModes[language.code]}
-                            onChange={(event) =>
-                              setRewriteModes((current) => ({
-                                ...current,
-                                [language.code]: event.target.value,
-                              }))
-                            }
-                          >
-                            <option value="translation">Dùng bản dịch</option>
-                            <option value="deepseek">DeepSeek v4 Pro</option>
-                            <option value="gpt">GPT Terra từ bản dịch</option>
-                            <option value="gpt-korea">
-                              GPT Terra từ tiếng Hàn
-                            </option>
-                          </select>
-                        </div>
-                      ))}
+                    {status?.languages.map((language) => (
+                      <div
+                        className={`rewrite-choice-row ${rewriteModes[language.code] === SKIP_MODE ? "skipped" : ""}`}
+                        key={language.code}
+                      >
+                        <strong>{language.label}</strong>
+                        <select
+                          className="mode-select"
+                          value={rewriteModes[language.code]}
+                          onChange={(event) =>
+                            setRewriteModes((current) => ({
+                              ...current,
+                              [language.code]: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="translation">Dùng bản dịch</option>
+                          <option value="deepseek">DeepSeek v4 Pro</option>
+                          <option value="gpt">GPT Terra từ bản dịch</option>
+                          <option value="gpt-korea">
+                            GPT Terra từ tiếng Hàn
+                          </option>
+                          <option value={SKIP_MODE}>Not write</option>
+                        </select>
+                      </div>
+                    ))}
                   </div>
                   <textarea
                     value={koreanScript}
@@ -706,7 +962,9 @@ export const App = () => {
                     <button
                       className="primary"
                       disabled={
-                        busy.workflow || koreanScript.trim().length < 20
+                        busy.workflow ||
+                        koreanScript.trim().length < 20 ||
+                        selectedLanguages.length === 0
                       }
                       onClick={startWorkflow}
                     >
@@ -741,7 +999,9 @@ export const App = () => {
               {!uploadWorkflow ? (
                 <section className="panel empty-state">
                   <h2>Đang chuẩn bị khu vực upload…</h2>
-                  <p>Bạn có thể upload MP3/SRT mà không cần chạy Write Script.</p>
+                  <p>
+                    Bạn có thể upload MP3/SRT mà không cần chạy Write Script.
+                  </p>
                 </section>
               ) : (
                 <>
@@ -888,6 +1148,14 @@ export const App = () => {
               )}
             </>
           )}
+          {activePage === "voices" && (
+            <VoicesPage
+              languages={status?.languages || []}
+              settings={voiceSettings}
+              onChanged={loadVoiceSettings}
+              onError={setError}
+            />
+          )}
           {activePage === "renders" && (
             <section className="panel workflow-panel">
               <div className="workflow-heading">
@@ -969,7 +1237,8 @@ export const App = () => {
                                   aria-label={`Tải video ${status?.languages.find((item) => item.code === code)?.label || code}`}
                                 >
                                   <span aria-hidden="true">↓</span>
-                                  Tải video {formatBytes(lane.outputSizeInBytes)}
+                                  Tải video{" "}
+                                  {formatBytes(lane.outputSizeInBytes)}
                                 </a>
                               )}
                               {activeRenderStages.has(lane.stage) && (

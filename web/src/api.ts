@@ -72,7 +72,10 @@ export type LanguageJobState = {
     audioName: string;
     srtPath: string;
     srtName: string;
+    source?: 'manual' | 'ai33';
+    voiceName?: string;
   } | null;
+  voiceover?: VoiceoverState;
   downloadUrl?: string;
   outputSizeInBytes?: number;
   renderId?: string;
@@ -81,4 +84,47 @@ export type LanguageJobState = {
   renderFinishedAt?: string;
   cancelRequested?: boolean;
   localOutputPath?: string;
+};
+
+export type VoiceoverState = {
+  status: 'running' | 'done' | 'failed';
+  progress: number;
+  completedParts: number;
+  totalParts: number;
+  message: string;
+  error?: string | null;
+  voice?: {key: string; name: string; voiceId: string; speed: number};
+  gapSeconds?: number;
+  audioPath?: string;
+  srtPath?: string;
+  audioName?: string;
+  srtName?: string;
+  durationSeconds?: number;
+  startedAt?: string;
+  finishedAt?: string | null;
+};
+
+export type VoiceEntry = {
+  key: string;
+  name: string;
+  voiceId: string;
+  speed: number;
+  language?: string | null;
+  gender?: string | null;
+  createdAt?: string;
+  sample: {
+    text: string;
+    voiceId: string;
+    speed: number;
+    fileName: string;
+    createdAt: string;
+  } | null;
+};
+
+export type VoiceSettings = {
+  gapSeconds: number;
+  maxChars: number;
+  languages: Record<string, {defaultVoiceKey: string | null; voices: VoiceEntry[]}>;
+  ai33Configured: boolean;
+  credits: number | null;
 };

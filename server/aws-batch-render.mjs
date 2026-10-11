@@ -7,6 +7,7 @@ import {
   TerminateJobCommand,
 } from '@aws-sdk/client-batch';
 import {buildMediaPlan} from './media-plan.mjs';
+import {mapWithConcurrency} from './concurrency.mjs';
 import {appendJobLog, getJob, mutateJob, updateJob} from './job-store.mjs';
 import {
   awsCredentials,
@@ -26,20 +27,6 @@ class RenderCancelledError extends Error {
     this.name = 'RenderCancelledError';
   }
 }
-
-const mapWithConcurrency = async (items, concurrency, mapper) => {
-  const results = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from({length: Math.min(concurrency, items.length)}, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await mapper(items[index], index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-};
 
 export const batchConfig = () => {
   const region = process.env.AWS_BATCH_REGION || process.env.AWS_REGION || 'ap-southeast-1';

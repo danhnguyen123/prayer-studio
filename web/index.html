@@ -3,9 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0e1715" />
+    <meta name="theme-color" content="#0d0d0d" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Prayer Studio</title>
+    <script>
+      // Đặt theme trước khi React render để không bị nháy màu.
+      (function () {
+        var theme;
+        try { theme = localStorage.getItem("prayer-theme"); } catch (e) {}
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === "light" ? "#f1f1f1" : "#0d0d0d";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

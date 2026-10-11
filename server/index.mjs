@@ -1,5 +1,5 @@
 import path from 'node:path';
-import {mkdirSync, readFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, renameSync} from 'node:fs';
 import {randomUUID, timingSafeEqual} from 'node:crypto';
 import {pipeline as streamPipeline} from 'node:stream/promises';
 import express from 'express';
@@ -23,6 +23,12 @@ const [{DEFAULT_PATHS, LANGUAGE_DEFINITIONS, PROJECT_ROOT}, {translatePrayerScri
     import('./upload-cleanup.mjs'),
     import('./aws-storage.mjs'),
   ]);
+const [ai33, {voiceSettings}, voiceoverTts] = await Promise.all([
+  import('./ai33.mjs'),
+  import('./voice-settings.mjs'),
+  import('./voiceover-tts.mjs'),
+]);
+voiceoverTts.failInterruptedVoiceovers();
 
 const app = express();
 const port = Number(process.env.APP_PORT || 4300);
@@ -170,6 +176,7 @@ app.get('/api/status', (_request, response) => {
     translationModel: process.env.OPENAI_MODEL || 'gpt-5.6-terra',
     translationReasoningEffort: process.env.OPENAI_REASONING_EFFORT || 'medium',
     batchConfigured: batchRenderer.isBatchConfigured(),
+    ai33Configured: ai33.hasAi33ApiKey(),
     batchRegion: process.env.AWS_BATCH_REGION || process.env.AWS_REGION || 'ap-southeast-1',
     languages: Object.entries(LANGUAGE_DEFINITIONS).map(([code, value]) => ({
       code,
@@ -341,6 +348,7 @@ app.post(
         audioName: audio.originalname,
         srtPath: srt.path,
         srtName: srt.originalname,
+        source: 'manual',
       };
       jobs.mutateJob(workflow.id, (current) => {
         current.languages[request.params.language] = {
@@ -355,6 +363,186 @@ app.post(
     }
   },
 );
+
+const getWorkflowLane = (jobId, code) => {
+  const workflow = jobs.getJob(jobId);
+  const lane = workflow?.type === 'prayer-workflow' ? workflow.languages?.[code] : null;
+  if (!lane) throw new Error('Workflow hoặc ngôn ngữ không hợp lệ.');
+  return {workflow, lane};
+};
+
+app.post('/api/workflows/:jobId/:language/voiceover/generate', (request, response, next) => {
+  try {
+    const {jobId, language: code} = request.params;
+    const {workflow, lane} = getWorkflowLane(jobId, code);
+    if (lane.skippedScript || !lane.outputPath || lane.stage !== 'script-ready') {
+      throw new Error('Kịch bản chưa sẵn sàng để tạo voiceover.');
+    }
+    if (voiceoverTts.isVoiceoverRunning(jobId, code)) {
+      response.status(409).json({error: 'Voiceover đang được tạo.'});
+      return;
+    }
+    ai33.getAi33ApiKey();
+    const voice = voiceSettings.resolveVoice(code, request.body?.voiceKey);
+    const {gapSeconds, maxChars} = voiceSettings.getSettings();
+    voiceoverTts.runVoiceoverGeneration({
+      jobId: workflow.id,
+      code,
+      voice,
+      gapSeconds,
+      maxChars,
+      outputRoot: uploadRoot,
+    });
+    response.status(202).json({ok: true});
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/workflows/:jobId/:language/voiceover/:kind', (request, response, next) => {
+  try {
+    const {jobId, language: code, kind} = request.params;
+    const {lane} = getWorkflowLane(jobId, code);
+    const voiceover = lane.voiceover;
+    if (voiceover?.status !== 'done') throw new Error('Voiceover chưa sẵn sàng.');
+    if (kind === 'audio') {
+      if (request.query.download) response.download(voiceover.audioPath, voiceover.audioName);
+      else response.sendFile(voiceover.audioPath);
+    } else if (kind === 'srt') {
+      response.download(voiceover.srtPath, voiceover.srtName);
+    } else {
+      throw new Error('Loại file không hợp lệ.');
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/workflows/:jobId/:language/assets/from-voiceover', (request, response, next) => {
+  try {
+    const {jobId, language: code} = request.params;
+    const {workflow} = getWorkflowLane(jobId, code);
+    const {lane: sourceLane} = getWorkflowLane(String(request.body?.sourceWorkflowId || ''), code);
+    const voiceover = sourceLane.voiceover;
+    if (voiceover?.status !== 'done') throw new Error('Voiceover AI33 chưa sẵn sàng.');
+    const assets = {
+      audioPath: voiceover.audioPath,
+      audioName: voiceover.audioName,
+      srtPath: voiceover.srtPath,
+      srtName: voiceover.srtName,
+      source: 'ai33',
+      voiceName: voiceover.voice?.name,
+    };
+    jobs.mutateJob(workflow.id, (current) => {
+      current.languages[code] = {
+        ...current.languages[code],
+        assets,
+        message: `Dùng voiceover AI33 · ${voiceover.voice?.name || ''}`.trim(),
+      };
+    });
+    response.json({ok: true, assets});
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/voices', async (_request, response) => {
+  const ai33Configured = ai33.hasAi33ApiKey();
+  const credits = ai33Configured ? await ai33.getCredits().catch(() => null) : null;
+  response.json({...voiceSettings.getSettings(), ai33Configured, credits});
+});
+
+app.put('/api/voices/settings', (request, response, next) => {
+  try {
+    response.json(voiceSettings.updateGlobalSettings(request.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/voices/:language', async (request, response, next) => {
+  try {
+    const found = await ai33.lookupVoice(request.body?.voiceId);
+    response.status(201).json(
+      voiceSettings.addVoice(request.params.language, {...found, speed: request.body?.speed ?? 1}),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/voices/:language/:key', async (request, response, next) => {
+  try {
+    const {language: code, key} = request.params;
+    const patch = {};
+    if (request.body?.speed !== undefined) patch.speed = request.body.speed;
+    const voiceId = request.body?.voiceId?.trim();
+    if (voiceId && voiceId !== voiceSettings.resolveVoice(code, key).voiceId) {
+      const {name, language, gender} = await ai33.lookupVoice(voiceId);
+      Object.assign(patch, {voiceId, name, language, gender});
+    }
+    response.json(voiceSettings.updateVoice(code, key, patch));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/voices/:language/:key', (request, response, next) => {
+  try {
+    voiceSettings.deleteVoice(request.params.language, request.params.key);
+    response.json({ok: true});
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/voices/:language/:key/default', (request, response, next) => {
+  try {
+    voiceSettings.setDefaultVoice(request.params.language, request.params.key);
+    response.json({ok: true});
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/voices/:language/:key/sample', async (request, response, next) => {
+  try {
+    const {language: code, key} = request.params;
+    const text = String(request.body?.text || '').trim();
+    if (!text) throw new Error('Hãy nhập text để nghe thử.');
+    if (text.length > 2000) throw new Error('Text nghe thử tối đa 2000 ký tự.');
+    const voice = voiceSettings.resolveVoice(code, key);
+    const filePath = voiceSettings.newSamplePath(code, key);
+    const temporary = `${filePath}.tmp.mp3`;
+    await voiceoverTts.synthesizeToFile({
+      text,
+      voiceId: voice.voiceId,
+      speed: voice.speed,
+      audioPath: temporary,
+    });
+    renameSync(temporary, filePath);
+    response.json(
+      voiceSettings.setVoiceSample(code, key, {
+        text,
+        filePath,
+        voiceId: voice.voiceId,
+        speed: voice.speed,
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/voices/:language/:key/sample', (request, response, next) => {
+  try {
+    const samplePath = voiceSettings.samplePath(request.params.language, request.params.key);
+    if (!samplePath) throw new Error('Voice chưa có file nghe thử.');
+    response.sendFile(samplePath);
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.post('/api/batch/render', (request, response, next) => {
   try {
