@@ -623,6 +623,14 @@ export const App = () => {
                 <a href={`${base}/srt`} download>
                   SRT
                 </a>
+                <button
+                  type="button"
+                  className="primary compact go-upload"
+                  title="Dùng voiceover + SRT (AI33) này để tạo video"
+                  onClick={() => navigate("upload")}
+                >
+                  Qua Upload &amp; Submit →
+                </button>
               </div>
             )}
           </>

@@ -404,6 +404,7 @@ audio { height: 32px; max-width: 100%; }
 .voiceover-result, .asset-source { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 9px; }
 .voiceover-result > span { color: var(--s-8fc4a4); font: 11px ui-monospace, monospace; }
 .voiceover-result a, .asset-source a { color: rgb(var(--g197)); font-size: 11px; font-weight: 800; text-decoration: none; }
+.voiceover-result .go-upload { margin-left: auto; }
 .asset-source { margin: 0 0 4px; border-radius: 9px; background: rgba(82,137,105,.1); padding: 8px 12px; }
 .asset-source > span { color: var(--s-91bca1); font-size: 11px; font-weight: 700; }
 .voice-global { display: grid; grid-template-columns: minmax(180px, 240px) minmax(180px, 240px) auto; gap: 12px; align-items: end; margin: 4px 0 0 45px; }
